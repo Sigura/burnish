@@ -1,0 +1,12 @@
+[Unit]
+Description=burnish: local English text refiner backend
+After=network.target burnish-languagetool.service
+Wants=burnish-languagetool.service
+
+[Service]
+ExecStart=@REPO@/.venv/bin/burnish-server
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

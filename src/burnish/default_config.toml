@@ -1,0 +1,80 @@
+[server]
+host = "127.0.0.1"
+port = 8765
+max_chars = 8000
+
+[engine]
+# Empty means ~/.local/share/burnish/models.
+models_dir = ""
+n_ctx = 8192
+
+# Where `burnish-models pull` gets weights: a Hugging Face repo and a file name pattern.
+# Set HF_TOKEN in the environment for gated repos.
+[models."qwen3:14b"]
+repo = "Qwen/Qwen3-14B-GGUF"
+file = "*Q4_K_M*.gguf"
+
+[models."qwen3:8b"]
+repo = "Qwen/Qwen3-8B-GGUF"
+file = "*Q4_K_M*.gguf"
+
+[models."gemma3:12b"]
+repo = "bartowski/google_gemma-3-12b-it-GGUF"
+file = "*Q4_K_M*.gguf"
+
+[models."gemma3:4b"]
+repo = "bartowski/google_gemma-3-4b-it-GGUF"
+file = "*Q4_K_M*.gguf"
+
+[models."phi4-mini"]
+repo = "unsloth/Phi-4-mini-instruct-GGUF"
+file = "*Q4_K_M*.gguf"
+
+[languagetool]
+url = "http://127.0.0.1:8081"
+language = "en-US"
+timeout_seconds = 15
+apply_categories = ["TYPOS", "PUNCTUATION"]
+# Words the spell checker must leave alone (project names, tools, ...).
+ignore_words = []
+
+# Minimum difflib char ratio between input and rewrite. Below it the rewrite is discarded.
+[drift]
+fix_min_ratio = 0.6
+polish_min_ratio = 0.4
+
+[selection]
+cache_seconds = 30
+
+# Checked from the highest threshold down. `candidates` are what `make eval` compares.
+# `options` go to llama_cpp.Llama. `keep_alive_seconds` is the idle time before the model unloads.
+# type_k/type_v = 8 is a Q8_0 KV cache, about half the VRAM of f16; a quantized V cache needs flash_attn.
+[[selection.gpu_tiers]]
+min_free_vram_mb = 12288
+model = "gemma3:12b"
+candidates = ["qwen3:14b", "gemma3:12b"]
+keep_alive_seconds = 60
+options = { n_gpu_layers = -1, flash_attn = true, type_k = 8, type_v = 8 }
+
+[[selection.gpu_tiers]]
+min_free_vram_mb = 6144
+model = "gemma3:4b"
+candidates = ["gemma3:4b", "qwen3:8b"]
+keep_alive_seconds = 60
+options = { n_gpu_layers = -1, flash_attn = true, type_k = 8, type_v = 8 }
+
+# On hybrid CPUs, n_threads set to the number of performance cores may be faster than the default.
+[selection.cpu]
+model = "gemma3:4b"
+candidates = ["gemma3:4b", "phi4-mini"]
+keep_alive_seconds = 600
+options = { n_gpu_layers = 0, flash_attn = true, type_k = 8, type_v = 8 }
+
+[hotkey]
+settle_ms = 200
+copy_timeout_ms = 800
+paste_delay_ms = 300
+# Sends Ctrl+C/Ctrl+V on X11. xdotool maps keys through the active layout and can miss with a
+# non-Latin one; ydotool sends physical keys but needs the burnish-ydotoold service.
+x11_keystrokes = "xdotool"
+terminal_classes = ["konsole", "yakuake", "xterm", "gnome-terminal-server", "alacritty", "kitty", "org.wezfurlong.wezterm", "tilix", "terminator", "urxvt", "foot"]

@@ -1,0 +1,10 @@
+[Unit]
+Description=burnish: ydotool daemon for sending keystrokes
+
+[Service]
+ExecStart=/usr/bin/env ydotoold --socket-path=%t/.ydotool_socket --socket-own=%U:%G
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

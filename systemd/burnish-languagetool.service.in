@@ -1,0 +1,11 @@
+[Unit]
+Description=burnish: self-hosted LanguageTool server
+
+[Service]
+ExecStart=/usr/bin/env java -Xmx2g -cp @LT_DIR@/languagetool-server.jar org.languagetool.server.HTTPServer --config @LT_DIR@/server.properties --port 8081
+WorkingDirectory=@LT_DIR@
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

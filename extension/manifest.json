@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Burnish selection",
+  "version": "0.1.0",
+  "description": "Refines the selected text with the local burnish backend.",
+  "permissions": ["contextMenus", "scripting", "clipboardWrite"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "background.js" },
+  "commands": {
+    "burnish-selection": {
+      "suggested_key": { "default": "Alt+Shift+P" },
+      "description": "Burnish selection"
+    }
+  }
+}
