@@ -30,6 +30,19 @@ file = "*Q4_K_M*.gguf"
 repo = "unsloth/Phi-4-mini-instruct-GGUF"
 file = "*Q4_K_M*.gguf"
 
+# DeepSeek API first; the local model takes over when the API fails or its rewrite is rejected.
+# Used only with a key: $DEEPSEEK_API_KEY, else key_file. Texts sent to it leave the machine.
+# deepseek-flash, not deepseek-v4-pro: a copy edit of a short text doesn't need the larger model,
+# and the hotkey waits for the answer. After a failed request the API is skipped for
+# retry_after_seconds, so an outage doesn't add a timeout to every request.
+[deepseek]
+enabled = true
+model = "deepseek-flash"
+url = "https://api.deepseek.com"
+timeout_seconds = 60
+retry_after_seconds = 300
+key_file = "~/.config/deepseek/api_key"
+
 [languagetool]
 url = "http://127.0.0.1:8081"
 language = "en-US"

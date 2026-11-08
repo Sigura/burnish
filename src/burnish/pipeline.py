@@ -1,11 +1,14 @@
 import difflib
 import re
+import time
 from dataclasses import dataclass, field
+from typing import Callable
 
 from loguru import logger
 
 from burnish.config import Config
-from burnish.engine import EngineError, LlamaEngine
+from burnish.deepseek import DeepSeekClient, DeepSeekError
+from burnish.engine import EngineError, LlamaEngine, Reply
 from burnish.languagetool import LanguageToolClient, LanguageToolError, apply_fixes
 from burnish.protect import has_prose, protect, protected_spans
 from burnish.selector import ModelSelector, Selection
@@ -104,11 +107,22 @@ def unified_diff(before: str, after: str) -> str:
 
 
 class Pipeline:
-    def __init__(self, cfg: Config, llm: LlamaEngine, lt: LanguageToolClient, selector: ModelSelector):
+    def __init__(
+        self,
+        cfg: Config,
+        llm: LlamaEngine,
+        lt: LanguageToolClient,
+        selector: ModelSelector,
+        remote: DeepSeekClient | None = None,
+        clock: Callable[[], float] = time.monotonic,
+    ):
         self.cfg = cfg
         self.llm = llm
         self.lt = lt
         self.selector = selector
+        self.remote = remote
+        self.clock = clock
+        self._remote_down_until = 0.0
 
     def _rejection(self, masked, cleaned: str, truncated: bool, step: str) -> tuple[str, str] | None:
         if truncated:
@@ -125,22 +139,35 @@ class Pipeline:
             return "drift_guard", f"the rewrite drifted too far (ratio {ratio:.2f} < {threshold})"
         return None
 
-    def _rewrite(self, text: str, step: str, selection: Selection) -> tuple[str, bool, list[dict]]:
+    def _rewrite(
+        self, text: str, step: str, chat: Callable[[str, str, int], Reply], label: str
+    ) -> tuple[str, bool, list[dict]]:
         masked = protect(text)
-        reply = self.llm.chat(
-            selection,
+        reply = chat(
             system_prompt(step, bool(masked.spans)),
             f"<text>\n{masked.text}\n</text>",
-            max_tokens=max(64, len(masked.text)),
+            max(64, len(masked.text)),
         )
         cleaned = keep_item_endings(masked, clean_output(reply.text, masked.text))
         rejection = self._rejection(masked, cleaned, reply.truncated, step)
         if rejection is None:
             return masked.restore(cleaned), True, []
         kind, reason = rejection
-        logger.warning("{} rejected: {}", selection.model, reason)
-        message = f"{selection.model} output discarded: {reason}"
+        logger.warning("{} rejected: {}", label, reason)
+        message = f"{label} output discarded: {reason}"
         return text, False, [{"type": kind, "message": message}]
+
+    def remote_available(self) -> bool:
+        return self.remote is not None and self.clock() >= self._remote_down_until
+
+    def _rewrite_remote(self, text: str, step: str) -> tuple[str, bool, list[dict]]:
+        assert self.remote is not None
+        try:
+            return self._rewrite(text, step, self.remote.chat, self.remote.name)
+        except DeepSeekError as e:
+            self._remote_down_until = self.clock() + self.cfg.deepseek.retry_after_seconds
+            logger.warning("{}; local model only for {:.0f} s", e, self.cfg.deepseek.retry_after_seconds)
+            return text, False, [{"type": "deepseek_error", "message": f"{e}; used the local model"}]
 
     def refine(
         self,
@@ -162,14 +189,29 @@ class Pipeline:
             used_llm = False
             guard_issues: list[dict] = []
             lt_issues: list[dict] = []
-            selected = selection or (self.selector.select(model) if use_llm else None)
+            # An explicit model or selection (eval, --model) means that local model only.
+            remote_first = model is None and selection is None
+            selected = selection
+            used: list[str] = []
             for step in STEPS[mode]:
                 llm_input = None
                 if use_llm:
                     before = current
-                    current, accepted, issues = self._rewrite(current, step, selected)
+                    accepted = False
+                    if remote_first and self.remote_available():
+                        current, accepted, issues = self._rewrite_remote(current, step)
+                        guard_issues += issues
+                        if accepted:
+                            used.append(self.remote.name)
+                    if not accepted:
+                        # Selecting only here leaves the local model unloaded while DeepSeek answers.
+                        local = selected = selected or self.selector.select(model)
+                        chat = lambda system, user, max_tokens: self.llm.chat(local, system, user, max_tokens)
+                        current, accepted, issues = self._rewrite(current, step, chat, local.model)
+                        guard_issues += issues
+                        if accepted:
+                            used.append(local.model)
                     used_llm = used_llm or accepted
-                    guard_issues += issues
                     llm_input = before if accepted else None
                 if use_lt:
                     matches = self.lt.check(current)
@@ -185,5 +227,5 @@ class Pipeline:
         final = lead + current + trail
         for issue in lt_issues:
             issue["offset"] += len(lead)
-        label = selected.model if used_llm else ("languagetool" if use_lt else "none")
+        label = " + ".join(dict.fromkeys(used)) if used_llm else ("languagetool" if use_lt else "none")
         return Result(final, unified_diff(text, final), label, guard_issues + lt_issues)

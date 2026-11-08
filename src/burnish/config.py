@@ -54,6 +54,16 @@ class DriftConfig:
 
 
 @dataclass(frozen=True)
+class DeepSeekConfig:
+    enabled: bool
+    model: str
+    url: str
+    timeout_seconds: float
+    retry_after_seconds: float
+    key_file: Path
+
+
+@dataclass(frozen=True)
 class Tier:
     model: str
     keep_alive_seconds: float
@@ -87,6 +97,7 @@ class Config:
     drift: DriftConfig
     selection: SelectionConfig
     hotkey: HotkeyConfig
+    deepseek: DeepSeekConfig
 
     def all_models(self) -> list[str]:
         tiers = (*self.selection.gpu_tiers, self.selection.cpu)
@@ -136,6 +147,7 @@ def _build(raw: dict) -> Config:
             cpu=_tier(selection["cpu"]),
         ),
         hotkey=HotkeyConfig(**{**hotkey, "terminal_classes": tuple(hotkey["terminal_classes"])}),
+        deepseek=DeepSeekConfig(**{**raw["deepseek"], "key_file": Path(raw["deepseek"]["key_file"]).expanduser()}),
     )
     unknown = set(cfg.all_models()) - set(models)
     if unknown:
