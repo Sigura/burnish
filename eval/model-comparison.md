@@ -72,6 +72,60 @@ burnish misses:
 - **Fix mode is saturated at about 99%.** The models only separate in all mode, where the Qwen3 models
   over-correct the least.
 - **Thinking hurts on this task.** It was 20× slower and less accurate.
-- **KV cache is not the difference.** At `n_ctx=8192` with a Q8_0 cache, gemma4:26b-a4b needs about 0.3–1 GB
-  depending on how the sliding-window layers are allocated, and qwen3.8:27b about 0.3 GB. Qwen3.8 also keeps
-  about 150 MB of fixed f32 recurrent state, which `type_k`/`type_v` do not quantize.
+- **KV cache is not the difference.** At `n_ctx=8192` with a Q8_0 cache, gemma4:26b-a4b uses 935 MiB of
+  KV cache and qwen3.8:27b about 0.3 GB. Qwen3.8 also keeps about 150 MB of fixed f32 recurrent state, which
+  `type_k`/`type_v` do not quantize. For gemma4:26b-a4b, llama-cpp-python 0.3.36 sizes the cache of all 25
+  sliding-window layers for the full context (850 MiB), although the window is only 1024 tokens. The 5
+  global layers take 85 MiB.
+
+## Smaller gemma4:26b-a4b quants (RCO-lite)
+
+Goal: fit gemma4:26b-a4b on a 12 GB card. Pipeline: `quant/` (`run_all.sh`).
+- Source: `google/gemma-4-26B-A4B-it-qat-q4_0-unquantized`, converted to bf16 GGUF with llama.cpp `b12020`.
+  Its converter needs transformers 5.6.2.
+- Only the MoE expert tensors are searched; they are 90% of the weights. Everything else stays as in Google's
+  release: Q4_0, with Q6_K token embeddings.
+- `ffn_down_exps` rows are 704 wide, so it can only use 32-block types: MXFP4, IQ4_NL or Q4_0.
+- The sweep swaps one 3-layer group at a time to each candidate type and measures the KL divergence against
+  bf16. The data is wikitext-2: imatrix from 200 train chunks, KLD on 40 test chunks of 512 tokens.
+- A knapsack then picks the type mix with the lowest summed KL divergence under each size budget.
+
+| file | size | expert types (gate_up / down) | KLD vs bf16 | same top token | CUDA buffers at n_ctx 8192 |
+|---|---|---|---|---|---|
+| Google QAT Q4_0 | 13.45 GiB | Q4_0 / Q4_0 | 0.353 | 70.3% | — (needs a 16 GB card) |
+| ours: Q4_0 with imatrix | 13.45 GiB | Q4_0 / Q4_0 | **0.208** | **78.3%** | — |
+| RCO-lite 11 GiB | 10.99 GiB | mostly IQ3_XXS, IQ3_S at both ends / IQ4_NL, Q4_0, MXFP4 | 0.328 (pred. 0.300) | 71.1% | 12706 MiB |
+| RCO-lite 10.5 GiB | 10.48 GiB | IQ3_XXS and IQ2_S / mostly MXFP4 | 0.385 (pred. 0.356) | 69.2% | 12185 MiB |
+| RCO-lite 10 GiB | 9.97 GiB | mostly IQ2_S, IQ3_XXS in layers 0–5 / MXFP4 | 0.501 (pred. 0.483) | 66.2% | 11663 MiB |
+
+Raw wikitext is far from what this instruct model is built for: even bf16 has a perplexity of 551 on it. That
+inflates every KLD above, so compare the KLD values with each other only. Ours and Google's Q4_0 files come
+from the same checkpoint and differ only in the imatrix-weighted rounding. Part of our advantage may come from
+calibrating and measuring on the same kind of text.
+
+Burnish eval (104 sentences, all files measured in one session on RTX 4090s):
+
+| file | hybrid exact | all-mode exact | all-mode over-correction | hybrid p50 | all-mode p95 |
+|---|---|---|---|---|---|
+| Google QAT Q4_0 | 99.0% | 79.8% | 17.3% | 0.16 s | 0.39 s |
+| ours: Q4_0 with imatrix | 99.0% | 78.8% | 17.3% | 0.13 s | 0.37 s |
+| RCO-lite 11 GiB | 97.1% | 79.8% | 16.3% | 0.13 s | 0.38 s |
+| RCO-lite 10.5 GiB | 98.1% | 79.8% | 17.3% | 0.13 s | 0.37 s |
+| RCO-lite 10 GiB | 99.0% | 77.9% | 19.2% | 0.12 s | 0.37 s |
+
+Findings:
+- **burnish can't tell these files apart.** Every miss is a defensible alternative to the reference:
+  - `team have` → `team has`, which all five make
+  - `don't need no help` → `don't need help`, where the reference has `any help`
+  - `lgtm` → `LGTM`
+
+  The 97–99% spread therefore says nothing about quant quality. The 10 GiB file, with the worst KLD, ties
+  Google's file.
+- **Fit on a 12 GB card (12288 MiB).** Add ~300–500 MiB of CUDA context to the buffers above. Only the 10 GiB
+  file comes close, at about 12.0–12.2 GiB in total. Not verified: llama-cpp-python's `swa_full=False`
+  should shrink the sliding-window KV cache from 850 MiB to roughly the window size, about 150 MiB. That
+  would bring the 10 GiB file to ~11.3 GiB and the 10.5 GiB file to ~11.8 GiB, including the context.
+- **The allocator's predictions run 4–9% low.** Swapping a single 3-layer group moves the KLD by only about
+  0.002–0.05, and not in order of bits: IQ4_XS was worse than IQ3_S for layers 0–2.
+- **Sweep cost.** About 1.5 hours across two GPUs, mostly the Python assembler writing an 11.5 GB file for
+  every variant at about 75 MB/s. The KL measurement itself takes about 20 s.
