@@ -26,9 +26,31 @@ file = "*Q4_K_M*.gguf"
 repo = "bartowski/google_gemma-3-4b-it-GGUF"
 file = "*Q4_K_M*.gguf"
 
+[models."gemma4:12b"]
+repo = "google/gemma-4-12B-it-qat-q4_0-gguf"
+file = "gemma-4-12b-it-qat-q4_0.gguf"
+
+[models."gemma4:26b-a4b"]
+repo = "google/gemma-4-26B-A4B-it-qat-q4_0-gguf"
+file = "gemma-4-26B_q4_0-it.gguf"
+
 [models."phi4-mini"]
 repo = "unsloth/Phi-4-mini-instruct-GGUF"
 file = "*Q4_K_M*.gguf"
+
+# The local model goes first. DeepSeek stands in when no GPU tier has enough free VRAM (all GPUs
+# busy, or none), before the CPU model, and when the local model fails to load or run.
+# Used only with a key: $DEEPSEEK_API_KEY, else key_file. Texts sent to it leave the machine.
+# deepseek-flash, not deepseek-v4-pro: a copy edit of a short text doesn't need the larger model,
+# and the hotkey waits for the answer. After a failed request the API is skipped for
+# retry_after_seconds, so an outage doesn't add a timeout to every request.
+[deepseek]
+enabled = true
+model = "deepseek-flash"
+url = "https://api.deepseek.com"
+timeout_seconds = 60
+retry_after_seconds = 300
+key_file = "~/.config/deepseek/api_key"
 
 [languagetool]
 url = "http://127.0.0.1:8081"
@@ -50,9 +72,16 @@ cache_seconds = 30
 # `options` go to llama_cpp.Llama. `keep_alive_seconds` is the idle time before the model unloads.
 # type_k/type_v = 8 is a Q8_0 KV cache, about half the VRAM of f16; a quantized V cache needs flash_attn.
 [[selection.gpu_tiers]]
+min_free_vram_mb = 16384
+model = "gemma4:26b-a4b"
+candidates = ["gemma4:26b-a4b", "gemma4:12b"]
+keep_alive_seconds = 1800
+options = { n_gpu_layers = -1, flash_attn = true, type_k = 8, type_v = 8 }
+
+[[selection.gpu_tiers]]
 min_free_vram_mb = 12288
-model = "gemma3:12b"
-candidates = ["qwen3:14b", "gemma3:12b"]
+model = "gemma4:12b"
+candidates = ["qwen3:14b", "gemma3:12b", "gemma4:12b"]
 keep_alive_seconds = 60
 options = { n_gpu_layers = -1, flash_attn = true, type_k = 8, type_v = 8 }
 

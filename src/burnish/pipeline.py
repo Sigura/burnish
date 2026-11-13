@@ -1,11 +1,14 @@
 import difflib
 import re
+import time
 from dataclasses import dataclass, field
+from typing import Callable
 
 from loguru import logger
 
 from burnish.config import Config
-from burnish.engine import EngineError, LlamaEngine
+from burnish.deepseek import DeepSeekClient, DeepSeekError
+from burnish.engine import EngineError, LlamaEngine, Reply
 from burnish.languagetool import LanguageToolClient, LanguageToolError, apply_fixes
 from burnish.protect import has_prose, protect, protected_spans
 from burnish.selector import ModelSelector, Selection
@@ -62,7 +65,11 @@ class Result:
 
 
 def clean_output(raw: str, source: str) -> str:
-    out = _THINK.sub("", raw).strip()
+    out = _THINK.sub("", raw)
+    # Templates such as Qwen3.8's open <think> inside the prompt, so the reply carries only the closing tag.
+    if "</think>" in out and "</think>" not in source:
+        out = out.rsplit("</think>", 1)[1]
+    out = out.strip()
     out = re.sub(r"^<text>\s*|\s*</text>$", "", out)
     if not _LEAD_IN.match(source):
         out = _LEAD_IN.sub("", out)
@@ -104,11 +111,22 @@ def unified_diff(before: str, after: str) -> str:
 
 
 class Pipeline:
-    def __init__(self, cfg: Config, llm: LlamaEngine, lt: LanguageToolClient, selector: ModelSelector):
+    def __init__(
+        self,
+        cfg: Config,
+        llm: LlamaEngine,
+        lt: LanguageToolClient,
+        selector: ModelSelector,
+        remote: DeepSeekClient | None = None,
+        clock: Callable[[], float] = time.monotonic,
+    ):
         self.cfg = cfg
         self.llm = llm
         self.lt = lt
         self.selector = selector
+        self.remote = remote
+        self.clock = clock
+        self._remote_down_until = 0.0
 
     def _rejection(self, masked, cleaned: str, truncated: bool, step: str) -> tuple[str, str] | None:
         if truncated:
@@ -125,22 +143,35 @@ class Pipeline:
             return "drift_guard", f"the rewrite drifted too far (ratio {ratio:.2f} < {threshold})"
         return None
 
-    def _rewrite(self, text: str, step: str, selection: Selection) -> tuple[str, bool, list[dict]]:
+    def _rewrite(
+        self, text: str, step: str, chat: Callable[[str, str, int], Reply], label: str
+    ) -> tuple[str, bool, list[dict]]:
         masked = protect(text)
-        reply = self.llm.chat(
-            selection,
+        reply = chat(
             system_prompt(step, bool(masked.spans)),
             f"<text>\n{masked.text}\n</text>",
-            max_tokens=max(64, len(masked.text)),
+            max(64, len(masked.text)),
         )
         cleaned = keep_item_endings(masked, clean_output(reply.text, masked.text))
         rejection = self._rejection(masked, cleaned, reply.truncated, step)
         if rejection is None:
             return masked.restore(cleaned), True, []
         kind, reason = rejection
-        logger.warning("{} rejected: {}", selection.model, reason)
-        message = f"{selection.model} output discarded: {reason}"
+        logger.warning("{} rejected: {}", label, reason)
+        message = f"{label} output discarded: {reason}"
         return text, False, [{"type": kind, "message": message}]
+
+    def remote_available(self) -> bool:
+        return self.remote is not None and self.clock() >= self._remote_down_until
+
+    def _rewrite_remote(self, text: str, step: str) -> tuple[str, bool, list[dict]]:
+        assert self.remote is not None
+        try:
+            return self._rewrite(text, step, self.remote.chat, self.remote.name)
+        except DeepSeekError as e:
+            self._remote_down_until = self.clock() + self.cfg.deepseek.retry_after_seconds
+            logger.warning("{}; skipped for {:.0f} s", e, self.cfg.deepseek.retry_after_seconds)
+            raise
 
     def refine(
         self,
@@ -162,14 +193,46 @@ class Pipeline:
             used_llm = False
             guard_issues: list[dict] = []
             lt_issues: list[dict] = []
-            selected = selection or (self.selector.select(model) if use_llm else None)
+            # An explicit model or selection (eval, --model) means that local model only.
+            may_use_remote = model is None and selection is None
+            selected = selection
+            used: list[str] = []
             for step in STEPS[mode]:
                 llm_input = None
                 if use_llm:
                     before = current
-                    current, accepted, issues = self._rewrite(current, step, selected)
+                    accepted = False
+                    local = selected = selected or self.selector.select(model)
+                    remote = may_use_remote and self.remote_available()
+                    # DeepSeek stands in only when no GPU tier has room (GPUs busy or absent) or the local model fails.
+                    if remote and not local.on_gpu:
+                        try:
+                            current, accepted, issues = self._rewrite_remote(current, step)
+                        except DeepSeekError as e:
+                            accepted, issues = False, [{"type": "deepseek_error", "message": f"{e}; used the local model"}]
+                        guard_issues += issues
+                        if accepted:
+                            used.append(self.remote.name)
+                    if not accepted:
+                        chat = lambda system, user, max_tokens: self.llm.chat(local, system, user, max_tokens)
+                        try:
+                            current, accepted, issues = self._rewrite(current, step, chat, local.model)
+                            if accepted:
+                                used.append(local.model)
+                        except EngineError as e:
+                            if not (remote and local.on_gpu):
+                                raise
+                            self.selector.invalidate()
+                            logger.warning("{}; trying DeepSeek", e)
+                            try:
+                                current, accepted, issues = self._rewrite_remote(current, step)
+                            except DeepSeekError as remote_error:
+                                raise ServiceError(f"{e}; DeepSeek failed too: {remote_error}") from remote_error
+                            issues = [{"type": "local_error", "message": f"{e}; used DeepSeek"}, *issues]
+                            if accepted:
+                                used.append(self.remote.name)
+                        guard_issues += issues
                     used_llm = used_llm or accepted
-                    guard_issues += issues
                     llm_input = before if accepted else None
                 if use_lt:
                     matches = self.lt.check(current)
@@ -185,5 +248,5 @@ class Pipeline:
         final = lead + current + trail
         for issue in lt_issues:
             issue["offset"] += len(lead)
-        label = selected.model if used_llm else ("languagetool" if use_lt else "none")
+        label = " + ".join(dict.fromkeys(used)) if used_llm else ("languagetool" if use_lt else "none")
         return Result(final, unified_diff(text, final), label, guard_issues + lt_issues)

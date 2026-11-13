@@ -23,7 +23,30 @@ class Reply:
 def _create_llama(**kwargs) -> Any:
     from llama_cpp import Llama
 
-    return Llama(**kwargs)
+    llama = Llama(**kwargs)
+    formatter = no_think_formatter(llama)
+    if formatter is not None:
+        llama.chat_handler = formatter.to_chat_handler()
+    return llama
+
+
+def no_think_formatter(llama: Any) -> Any:
+    # Qwen3.8's template opens <think> unless enable_thinking=False and ignores /no_think.
+    # create_chat_completion can't pass template variables, so the default handler is replaced.
+    template = llama.metadata.get("tokenizer.chat_template", "")
+    if "enable_thinking" not in template:
+        return None
+    from llama_cpp.llama_chat_format import Jinja2ChatFormatter
+
+    class NoThinkFormatter(Jinja2ChatFormatter):
+        def __call__(self, **kwargs):
+            return super().__call__(enable_thinking=False, **kwargs)
+
+    def text(token: int) -> str:
+        return llama.detokenize([token], special=True).decode("utf-8", "replace") if token != -1 else ""
+
+    eos = llama.token_eos()
+    return NoThinkFormatter(template=template, eos_token=text(eos), bos_token=text(llama.token_bos()), stop_token_ids=[eos])
 
 
 def supports_gpu_offload() -> bool:

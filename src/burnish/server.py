@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from burnish.config import Config, load_config, setup_logging
+from burnish.deepseek import DeepSeekClient, load_key
 from burnish.engine import LlamaEngine
 from burnish.languagetool import LanguageToolClient, LanguageToolError
 from burnish.models import ModelStore
@@ -35,7 +36,21 @@ def build_pipeline(cfg: Config) -> Pipeline:
     if not gpu:
         logger.warning("llama.cpp was built without GPU support; using the CPU tier")
     free_vram = query_free_vram_mb if gpu else (lambda: None)
-    return Pipeline(cfg, engine, lt, ModelSelector(cfg.selection, query_process_vram_mb, free_vram))
+    key = load_key(cfg.deepseek) if cfg.deepseek.enabled else None
+    remote = DeepSeekClient(cfg.deepseek, key) if key else None
+    logger.info("DeepSeek: {}", remote.name if remote else "off" if not cfg.deepseek.enabled else "no key")
+    return Pipeline(cfg, engine, lt, ModelSelector(cfg.selection, query_process_vram_mb, free_vram), remote)
+
+
+def deepseek_status(cfg: Config, pipe: Pipeline) -> str:
+    if not cfg.deepseek.enabled:
+        return "off in config"
+    if pipe.remote is None:
+        return f"no key: set DEEPSEEK_API_KEY or write it to {cfg.deepseek.key_file}"
+    status = pipe.remote.check()
+    if status == "ok" and not pipe.remote_available():
+        return "skipped after a failed request, retried soon"
+    return status
 
 
 def create_app(cfg: Config, pipeline: Pipeline | None = None) -> FastAPI:
@@ -69,6 +84,8 @@ def create_app(cfg: Config, pipeline: Pipeline | None = None) -> FastAPI:
             "model": selection.model,
             "model_downloaded": pipe.llm.is_pulled(selection.model),
             "free_vram_mb": selection.free_vram_mb,
+            "deepseek": deepseek_status(cfg, pipe),
+            "deepseek_model": pipe.remote.name if pipe.remote else None,
         }
         try:
             pipe.lt.check("ok")
