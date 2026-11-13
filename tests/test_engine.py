@@ -2,7 +2,7 @@ from dataclasses import replace
 
 import pytest
 
-from burnish.engine import EngineError, LlamaEngine
+from burnish.engine import EngineError, LlamaEngine, no_think_formatter
 from burnish.models import ModelStore
 from burnish.selector import Selection
 
@@ -92,6 +92,37 @@ def test_thinking_disabled_only_for_qwen3(setup):
     assert setup.llamas[-1].calls[0]["messages"][1]["content"] == "usr /no_think"
     setup.engine.chat(GEMMA, "sys", "usr", 100)
     assert setup.llamas[-1].calls[0]["messages"][1]["content"] == "usr"
+
+
+class TemplateLlama:
+    def __init__(self, template):
+        self.metadata = {"tokenizer.chat_template": template}
+
+    def token_eos(self):
+        return 2
+
+    def token_bos(self):
+        return -1
+
+    def detokenize(self, tokens, special=False):
+        return b"<eos>"
+
+
+QWEN38_TEMPLATE = (
+    "{% for m in messages %}<|{{ m.role }}|>{{ m.content }}{% endfor %}<|assistant|>"
+    "{% if enable_thinking is defined and enable_thinking is false %}<think>\n\n</think>\n\n"
+    "{% else %}<think>\n{% endif %}"
+)
+
+
+def test_template_thinking_is_turned_off():
+    formatter = no_think_formatter(TemplateLlama(QWEN38_TEMPLATE))
+    prompt = formatter(messages=[{"role": "user", "content": "hi"}]).prompt
+    assert prompt == "<|user|>hi<|assistant|><think>\n\n</think>\n\n"
+
+
+def test_templates_without_the_switch_keep_the_default_handler():
+    assert no_think_formatter(TemplateLlama("{% for m in messages %}{{ m.content }}{% endfor %}")) is None
 
 
 def test_length_finish_is_reported_as_truncated(setup):

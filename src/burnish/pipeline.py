@@ -65,7 +65,11 @@ class Result:
 
 
 def clean_output(raw: str, source: str) -> str:
-    out = _THINK.sub("", raw).strip()
+    out = _THINK.sub("", raw)
+    # Templates such as Qwen3.8's open <think> inside the prompt, so the reply carries only the closing tag.
+    if "</think>" in out and "</think>" not in source:
+        out = out.rsplit("</think>", 1)[1]
+    out = out.strip()
     out = re.sub(r"^<text>\s*|\s*</text>$", "", out)
     if not _LEAD_IN.match(source):
         out = _LEAD_IN.sub("", out)

@@ -158,6 +158,7 @@ def test_languagetool_failure_raises(harness):
         ("“She goes home.”", "She goes home."),
         ("<text>\nShe goes home.\n</text>", "She goes home."),
         ("<think>\n\n</think>\n\nShe goes home.", "She goes home."),
+        ("Need edit grammar. \"go\" -> \"goes\".\n</think>\n\nShe goes home.", "She goes home."),
         ("Here is the corrected text:\n\nShe goes home.", "She goes home."),
         ("She goes home.\n\nNote: I changed the verb.", "She goes home."),
         ("```\nShe goes home.\n```", "She goes home."),
