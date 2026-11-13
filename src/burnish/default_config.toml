@@ -38,7 +38,8 @@ file = "gemma-4-26B_q4_0-it.gguf"
 repo = "unsloth/Phi-4-mini-instruct-GGUF"
 file = "*Q4_K_M*.gguf"
 
-# DeepSeek API first; the local model takes over when the API fails or its rewrite is rejected.
+# The local model goes first. DeepSeek stands in when no GPU tier has enough free VRAM (all GPUs
+# busy, or none), before the CPU model, and when the local model fails to load or run.
 # Used only with a key: $DEEPSEEK_API_KEY, else key_file. Texts sent to it leave the machine.
 # deepseek-flash, not deepseek-v4-pro: a copy edit of a short text doesn't need the larger model,
 # and the hotkey waits for the answer. After a failed request the API is skipped for

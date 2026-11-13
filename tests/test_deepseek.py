@@ -6,6 +6,8 @@ from conftest import Harness
 from fastapi.testclient import TestClient
 
 from burnish.deepseek import DeepSeekClient, load_key
+from burnish.pipeline import ServiceError
+from burnish.selector import Selection
 from burnish.server import create_app
 
 
@@ -52,57 +54,94 @@ def remote_harness(cfg, api, clock):
     return h
 
 
-def test_deepseek_rewrites_first_and_the_local_model_is_not_used(remote_harness, api):
-    api.replies = [("She goes home.", "stop")]
+@pytest.fixture
+def busy_harness(remote_harness):
+    remote_harness.selector.selection = Selection("phi4-mini", 60, False)
+    return remote_harness
+
+
+def test_local_model_goes_first_when_a_gpu_tier_fits(remote_harness, api):
+    remote_harness.engine.replies = ["She goes home."]
     result = remote_harness.pipeline.refine("She go home.", "fix")
+    assert result.model == "gemma3:4b"
+    assert api.requests == []
+
+
+def test_deepseek_stands_in_when_the_gpus_are_busy(busy_harness, api):
+    api.replies = [("She goes home.", "stop")]
+    result = busy_harness.pipeline.refine("She go home.", "fix")
     assert result.text == "She goes home."
     assert result.model == "deepseek:deepseek-flash"
-    assert remote_harness.engine.requests == []
+    assert busy_harness.engine.requests == []
     body = json.loads(api.requests[0].content)
     assert api.requests[0].headers["Authorization"] == "Bearer sk-test"
     assert body["model"] == "deepseek-flash" and body["temperature"] == 0
     assert body["thinking"] == {"type": "disabled"}
 
 
-def test_rejected_deepseek_rewrite_goes_to_the_local_model(remote_harness, api):
+def test_rejected_deepseek_rewrite_goes_to_the_cpu_model(busy_harness, api):
     api.replies = [("Something else entirely, unrelated to the input.", "stop")]
-    remote_harness.engine.replies = ["She goes home."]
-    result = remote_harness.pipeline.refine("She go home.", "fix")
+    busy_harness.engine.replies = ["She goes home."]
+    result = busy_harness.pipeline.refine("She go home.", "fix")
     assert result.text == "She goes home."
-    assert result.model == "gemma3:4b"
+    assert result.model == "phi4-mini"
     assert result.issues[0]["type"] == "drift_guard"
     assert "deepseek:deepseek-flash" in result.issues[0]["message"]
 
 
-def test_failed_api_falls_back_and_is_skipped_until_retry(remote_harness, api, clock, cfg):
+def test_failed_api_falls_back_and_is_skipped_until_retry(busy_harness, api, clock, cfg):
     api.down = True
-    remote_harness.engine.replies = ["She goes home.", "She goes home now."]
-    result = remote_harness.pipeline.refine("She go home.")
-    assert result.model == "gemma3:4b"
+    busy_harness.engine.replies = ["She goes home.", "She goes home now."]
+    result = busy_harness.pipeline.refine("She go home.")
+    assert result.model == "phi4-mini"
     assert [i["type"] for i in result.issues] == ["deepseek_error"]
-    assert len(remote_harness.engine.requests) == 2
+    assert len(busy_harness.engine.requests) == 2
 
     api.down = False
     api.replies = [("He goes home.", "stop")]
-    remote_harness.engine.replies = ["He goes home."]
-    assert remote_harness.pipeline.refine("He go home.", "fix").model == "gemma3:4b"
+    busy_harness.engine.replies = ["He goes home."]
+    assert busy_harness.pipeline.refine("He go home.", "fix").model == "phi4-mini"
 
     clock.now = cfg.deepseek.retry_after_seconds
-    assert remote_harness.pipeline.refine("He go home.", "fix").model == "deepseek:deepseek-flash"
+    assert busy_harness.pipeline.refine("He go home.", "fix").model == "deepseek:deepseek-flash"
 
 
-def test_explicit_model_skips_deepseek(remote_harness, api):
-    remote_harness.engine.replies = ["She goes home."]
-    result = remote_harness.pipeline.refine("She go home.", "fix", model="qwen3:8b")
+def test_failed_local_model_falls_back_to_deepseek(remote_harness, api):
+    remote_harness.engine.down = True
+    api.replies = [("She goes home.", "stop")]
+    result = remote_harness.pipeline.refine("She go home.", "fix")
+    assert result.text == "She goes home."
+    assert result.model == "deepseek:deepseek-flash"
+    assert result.issues[0]["type"] == "local_error"
+    assert remote_harness.selector.invalidated
+
+
+def test_local_and_deepseek_failures_are_both_reported(remote_harness, api):
+    remote_harness.engine.down = True
+    api.down = True
+    with pytest.raises(ServiceError, match="engine down; DeepSeek failed too"):
+        remote_harness.pipeline.refine("She go home.", "fix")
+
+
+def test_rejected_local_rewrite_does_not_go_to_deepseek(remote_harness, api):
+    remote_harness.engine.replies = ["Something else entirely, unrelated to the input."]
+    result = remote_harness.pipeline.refine("She go home.", "fix")
+    assert result.issues[0]["type"] == "drift_guard"
+    assert api.requests == []
+
+
+def test_explicit_model_skips_deepseek(busy_harness, api):
+    busy_harness.engine.replies = ["She goes home."]
+    result = busy_harness.pipeline.refine("She go home.", "fix", model="qwen3:8b")
     assert result.model == "qwen3:8b"
     assert api.requests == []
 
 
-def test_truncated_deepseek_answer_is_rejected(remote_harness, api):
+def test_truncated_deepseek_answer_is_rejected(busy_harness, api):
     api.replies = [("She goes", "length")]
-    remote_harness.engine.replies = ["She goes home."]
-    result = remote_harness.pipeline.refine("She go home.", "fix")
-    assert result.model == "gemma3:4b"
+    busy_harness.engine.replies = ["She goes home."]
+    result = busy_harness.pipeline.refine("She go home.", "fix")
+    assert result.model == "phi4-mini"
     assert result.issues[0]["type"] == "truncated_guard"
 
 

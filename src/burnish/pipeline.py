@@ -170,8 +170,8 @@ class Pipeline:
             return self._rewrite(text, step, self.remote.chat, self.remote.name)
         except DeepSeekError as e:
             self._remote_down_until = self.clock() + self.cfg.deepseek.retry_after_seconds
-            logger.warning("{}; local model only for {:.0f} s", e, self.cfg.deepseek.retry_after_seconds)
-            return text, False, [{"type": "deepseek_error", "message": f"{e}; used the local model"}]
+            logger.warning("{}; skipped for {:.0f} s", e, self.cfg.deepseek.retry_after_seconds)
+            raise
 
     def refine(
         self,
@@ -194,7 +194,7 @@ class Pipeline:
             guard_issues: list[dict] = []
             lt_issues: list[dict] = []
             # An explicit model or selection (eval, --model) means that local model only.
-            remote_first = model is None and selection is None
+            may_use_remote = model is None and selection is None
             selected = selection
             used: list[str] = []
             for step in STEPS[mode]:
@@ -202,19 +202,36 @@ class Pipeline:
                 if use_llm:
                     before = current
                     accepted = False
-                    if remote_first and self.remote_available():
-                        current, accepted, issues = self._rewrite_remote(current, step)
+                    local = selected = selected or self.selector.select(model)
+                    remote = may_use_remote and self.remote_available()
+                    # DeepSeek stands in only when no GPU tier has room (GPUs busy or absent) or the local model fails.
+                    if remote and not local.on_gpu:
+                        try:
+                            current, accepted, issues = self._rewrite_remote(current, step)
+                        except DeepSeekError as e:
+                            accepted, issues = False, [{"type": "deepseek_error", "message": f"{e}; used the local model"}]
                         guard_issues += issues
                         if accepted:
                             used.append(self.remote.name)
                     if not accepted:
-                        # Selecting only here leaves the local model unloaded while DeepSeek answers.
-                        local = selected = selected or self.selector.select(model)
                         chat = lambda system, user, max_tokens: self.llm.chat(local, system, user, max_tokens)
-                        current, accepted, issues = self._rewrite(current, step, chat, local.model)
+                        try:
+                            current, accepted, issues = self._rewrite(current, step, chat, local.model)
+                            if accepted:
+                                used.append(local.model)
+                        except EngineError as e:
+                            if not (remote and local.on_gpu):
+                                raise
+                            self.selector.invalidate()
+                            logger.warning("{}; trying DeepSeek", e)
+                            try:
+                                current, accepted, issues = self._rewrite_remote(current, step)
+                            except DeepSeekError as remote_error:
+                                raise ServiceError(f"{e}; DeepSeek failed too: {remote_error}") from remote_error
+                            issues = [{"type": "local_error", "message": f"{e}; used DeepSeek"}, *issues]
+                            if accepted:
+                                used.append(self.remote.name)
                         guard_issues += issues
-                        if accepted:
-                            used.append(local.model)
                     used_llm = used_llm or accepted
                     llm_input = before if accepted else None
                 if use_lt:
