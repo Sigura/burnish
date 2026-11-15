@@ -26,6 +26,8 @@ git -C "$SRC" -c advice.detachedHead=false checkout -q "$TAG"
 echo "== python venv (cmake, ninja, converter requirements)"
 [[ -x "$VENV/bin/python" ]] || uv venv -q "$VENV" --python 3.12
 VIRTUAL_ENV="$VENV" uv pip install -q cmake ninja -r "$SRC/requirements/requirements-convert_hf_to_gguf.txt"
+# llama.cpp pins transformers 4.57.6, which can't read Gemma 4's tokenizer_config.json (saved by 5.6.2).
+VIRTUAL_ENV="$VENV" uv pip install -q "transformers==5.6.2"
 
 echo "== configuring CUDA build (sm_86, sm_89)"
 export PATH="$VENV/bin:$CUDA_HOME/bin:$PATH"

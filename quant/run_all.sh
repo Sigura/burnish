@@ -19,11 +19,13 @@ echo "== checking prerequisites"
 [[ -x "$BURNISH_PY" ]] || { echo "missing burnish venv at $BURNISH_PY" >&2; exit 1; }
 
 step() { echo; echo "== $*"; "$PY" "$HERE/rco_lite.py" "$@"; }
+# The bf16 steps spread over every visible GPU; keep them on the GPUs given for the sweep.
+bf16_step() { CUDA_VISIBLE_DEVICES="$(IFS=,; echo "${GPUS[*]}")" step "$@"; }
 
 [[ -f "$WORK/data/wiki.test.raw" ]] || step data
 [[ -f "$WORK/gguf/gemma4-26b-a4b-qat-bf16.gguf" ]] || step convert
-[[ -f "$WORK/imatrix.gguf" ]] || step imatrix
-[[ -f "$WORK/kld/bf16.kld" ]] || step kld-base
+[[ -f "$WORK/imatrix.gguf" ]] || bf16_step imatrix
+[[ -f "$WORK/kld/bf16.kld" ]] || bf16_step kld-base
 step quantize
 step sweep --gpus "${GPUS[@]}"
 
