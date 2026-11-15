@@ -15,7 +15,7 @@ from burnish.languagetool import LanguageToolClient, LanguageToolError
 from burnish.models import ModelStore
 from burnish.pipeline import Pipeline, char_ratio
 from burnish.protect import protected_spans
-from burnish.selector import ModelSelector, query_free_vram_mb, query_process_vram_mb, selection_from_tier
+from burnish.selector import ModelSelector, selection_from_tier
 
 ROOT = Path(__file__).parent
 GPU_TARGET_SECONDS = 3.0
@@ -134,13 +134,14 @@ def print_row(name: str, m: dict, target: float | None) -> None:
     )
 
 
-def evaluate_candidate(pipeline, llm, rows, cases, tier, model, on_gpu, results) -> dict:
-    selection = replace(selection_from_tier(tier, on_gpu), model=model, keep_alive_seconds=600)
+def evaluate_candidate(pipeline, llm, rows, cases, base, model, results) -> dict:
+    selection = replace(base, model=model, keep_alive_seconds=600)
+    on_gpu = selection.on_gpu
     llm.unload()
     started = time.perf_counter()
     pipeline.refine(rows[0][0], "fix", selection=selection, use_lt=False)
     cold = time.perf_counter() - started
-    vram_mb = query_process_vram_mb()
+    vram_mb = llm.vram_mb(selection.gpu) if selection.gpu is not None else 0
 
     device = "gpu" if on_gpu else "cpu"
     target = GPU_TARGET_SECONDS if on_gpu else CPU_TARGET_SECONDS
@@ -196,7 +197,7 @@ def main() -> None:
         lt.check("ok")
     except LanguageToolError as e:
         raise SystemExit(f"{e}\nStart it with: systemctl --user start burnish-languagetool")
-    pipeline = Pipeline(cfg, llm, lt, ModelSelector(cfg.selection, query_process_vram_mb))
+    pipeline = Pipeline(cfg, llm, lt, ModelSelector(cfg.selection, llm.vram_mb))
     installed = llm.installed()
 
     results: dict[str, dict] = {}
@@ -212,13 +213,13 @@ def main() -> None:
 
     picks: list[tuple[str, dict, float]] = []
 
-    def run_tier(label, tier, on_gpu, target):
+    def run_tier(label, tier, base, target):
         measured = {}
         for model in args.model or tier.candidates:
             if model not in installed:
                 print(f"|   skipped {model}: not downloaded (burnish-models pull {model})")
                 continue
-            measured[model] = evaluate_candidate(pipeline, llm, rows, cases, tier, model, on_gpu, results)
+            measured[model] = evaluate_candidate(pipeline, llm, rows, cases, base, model, results)
         picks.append((label, measured, target))
 
     if not args.no_gpu and not llm.supports_gpu():
@@ -227,14 +228,15 @@ def main() -> None:
         for tier in cfg.selection.gpu_tiers:
             if args.model and picks:
                 break
-            free = query_free_vram_mb()
-            available = None if free is None else free + query_process_vram_mb()
-            if available is None or available < tier.min_free_vram_mb:
-                print(f"|   skipped GPU tier >= {tier.min_free_vram_mb} MiB: {available} MiB free")
+            gpus = pipeline.selector.available_gpus() or []
+            base = pipeline.selector.fit(tier, gpus)
+            if base is None:
+                free = ", ".join(f"GPU {gpu}: {available} MiB" for gpu, _, available in gpus) or "no GPU"
+                print(f"|   skipped GPU tier >= {tier.min_free_vram_mb} MiB: free VRAM {free}")
                 continue
-            run_tier(f"GPU tier >= {tier.min_free_vram_mb} MiB", tier, True, GPU_TARGET_SECONDS)
+            run_tier(f"GPU tier >= {tier.min_free_vram_mb} MiB (GPU {base.gpu})", tier, base, GPU_TARGET_SECONDS)
     if not args.no_cpu:
-        run_tier("CPU tier", cfg.selection.cpu, False, CPU_TARGET_SECONDS)
+        run_tier("CPU tier", cfg.selection.cpu, selection_from_tier(cfg.selection.cpu, False), CPU_TARGET_SECONDS)
 
     print("\nSuggested defaults (best exact match within the latency target):")
     for label, measured, target in picks:

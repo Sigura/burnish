@@ -13,7 +13,7 @@ from burnish.engine import LlamaEngine
 from burnish.languagetool import LanguageToolClient, LanguageToolError
 from burnish.models import ModelStore
 from burnish.pipeline import Pipeline, ServiceError
-from burnish.selector import ModelSelector, query_free_vram_mb, query_process_vram_mb
+from burnish.selector import ModelSelector, query_free_vram_mb
 
 
 class RefineRequest(BaseModel):
@@ -39,7 +39,7 @@ def build_pipeline(cfg: Config) -> Pipeline:
     key = load_key(cfg.deepseek) if cfg.deepseek.enabled else None
     remote = DeepSeekClient(cfg.deepseek, key) if key else None
     logger.info("DeepSeek: {}", remote.name if remote else "off" if not cfg.deepseek.enabled else "no key")
-    return Pipeline(cfg, engine, lt, ModelSelector(cfg.selection, query_process_vram_mb, free_vram), remote)
+    return Pipeline(cfg, engine, lt, ModelSelector(cfg.selection, engine.vram_mb, free_vram), remote)
 
 
 def deepseek_status(cfg: Config, pipe: Pipeline) -> str:
@@ -84,6 +84,7 @@ def create_app(cfg: Config, pipeline: Pipeline | None = None) -> FastAPI:
             "model": selection.model,
             "model_downloaded": pipe.llm.is_pulled(selection.model),
             "free_vram_mb": selection.free_vram_mb,
+            "gpus_busy": selection.gpus_busy,
             "deepseek": deepseek_status(cfg, pipe),
             "deepseek_model": pipe.remote.name if pipe.remote else None,
         }

@@ -34,6 +34,12 @@ file = "gemma-4-12b-it-qat-q4_0.gguf"
 repo = "google/gemma-4-26B-A4B-it-qat-q4_0-gguf"
 file = "gemma-4-26B_q4_0-it.gguf"
 
+# Built locally by quant/run_all.sh: Google's QAT checkpoint re-quantized to Q4_0 with an imatrix
+# (eval/model-comparison.md). No repo: put the file in models_dir/gemma4-26b-a4b-imat/.
+[models."gemma4:26b-a4b-imat"]
+repo = ""
+file = "gu-q4_0_dn-q4_0.gguf"
+
 [models."phi4-mini"]
 repo = "unsloth/Phi-4-mini-instruct-GGUF"
 file = "*Q4_K_M*.gguf"
@@ -67,29 +73,32 @@ polish_min_ratio = 0.4
 
 [selection]
 cache_seconds = 30
+# nvidia-smi indices to load on, in order of preference. Empty means every GPU in CUDA_VISIBLE_DEVICES
+# (all if unset). The model goes on the first one with room for the highest tier, never split across GPUs.
+gpus = []
 
 # Checked from the highest threshold down. `candidates` are what `make eval` compares.
 # `options` go to llama_cpp.Llama. `keep_alive_seconds` is the idle time before the model unloads.
 # type_k/type_v = 8 is a Q8_0 KV cache, about half the VRAM of f16; a quantized V cache needs flash_attn.
 [[selection.gpu_tiers]]
 min_free_vram_mb = 16384
-model = "gemma4:26b-a4b"
-candidates = ["gemma4:26b-a4b", "gemma4:12b"]
-keep_alive_seconds = 1800
+model = "gemma4:26b-a4b-imat"
+candidates = ["gemma4:26b-a4b-imat", "gemma4:26b-a4b", "gemma4:12b"]
+keep_alive_seconds = 600
 options = { n_gpu_layers = -1, flash_attn = true, type_k = 8, type_v = 8 }
 
 [[selection.gpu_tiers]]
 min_free_vram_mb = 12288
 model = "gemma4:12b"
 candidates = ["qwen3:14b", "gemma3:12b", "gemma4:12b"]
-keep_alive_seconds = 60
+keep_alive_seconds = 600
 options = { n_gpu_layers = -1, flash_attn = true, type_k = 8, type_v = 8 }
 
 [[selection.gpu_tiers]]
 min_free_vram_mb = 6144
 model = "gemma3:4b"
 candidates = ["gemma3:4b", "qwen3:8b"]
-keep_alive_seconds = 60
+keep_alive_seconds = 600
 options = { n_gpu_layers = -1, flash_attn = true, type_k = 8, type_v = 8 }
 
 # On hybrid CPUs, n_threads set to the number of performance cores may be faster than the default.

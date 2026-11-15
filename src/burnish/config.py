@@ -77,6 +77,7 @@ class SelectionConfig:
     cache_seconds: float
     gpu_tiers: tuple[Tier, ...]
     cpu: Tier
+    gpus: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -145,6 +146,7 @@ def _build(raw: dict) -> Config:
             cache_seconds=selection["cache_seconds"],
             gpu_tiers=tuple(tiers),
             cpu=_tier(selection["cpu"]),
+            gpus=tuple(selection["gpus"]),
         ),
         hotkey=HotkeyConfig(**{**hotkey, "terminal_classes": tuple(hotkey["terminal_classes"])}),
         deepseek=DeepSeekConfig(**{**raw["deepseek"], "key_file": Path(raw["deepseek"]["key_file"]).expanduser()}),

@@ -7,7 +7,7 @@ from loguru import logger
 
 from burnish.config import EngineConfig
 from burnish.models import ModelError, ModelStore
-from burnish.selector import Selection
+from burnish.selector import Selection, query_gpu_free_mb
 
 
 class EngineError(RuntimeError):
@@ -62,16 +62,19 @@ class LlamaEngine:
         store: ModelStore,
         factory: Callable[..., Any] = _create_llama,
         timer_factory: Callable[..., Any] = threading.Timer,
+        gpu_free_mb: Callable[[int], int | None] = query_gpu_free_mb,
     ):
         self.cfg = cfg
         self.store = store
         self.factory = factory
         self.timer_factory = timer_factory
+        self.gpu_free_mb = gpu_free_mb
         # llama.cpp contexts aren't thread-safe, and the server handles requests on a thread pool.
         self._lock = threading.RLock()
         self._llama: Any = None
         self._key: tuple | None = None
         self._timer: Any = None
+        self._vram: tuple[int, int] | None = None
 
     def supports_gpu(self) -> bool:
         return supports_gpu_offload()
@@ -85,8 +88,12 @@ class LlamaEngine:
     def installed(self) -> set[str]:
         return {name for name in self.store.sources if self.is_pulled(name)}
 
+    def vram_mb(self, gpu: int) -> int:
+        loaded = self._vram
+        return loaded[1] if loaded and loaded[0] == gpu else 0
+
     def _ensure_loaded(self, selection: Selection) -> Any:
-        key = (selection.model, tuple(sorted(selection.options.items())))
+        key = (selection.model, selection.gpu, tuple(sorted(selection.options.items())))
         if key == self._key:
             return self._llama
         self.unload()
@@ -96,7 +103,9 @@ class LlamaEngine:
             raise EngineError(str(e)) from e
         if path is None:
             raise EngineError(f"Model {selection.model} is not downloaded. Run: burnish-models pull {selection.model}")
-        logger.info("loading {} with {}", selection.model, selection.options)
+        logger.info("loading {} on GPU {} with {}", selection.model, selection.gpu, selection.options)
+        # nvidia-smi's PIDs don't match ours inside a container, so our VRAM is measured as the drop in free memory.
+        before = self.gpu_free_mb(selection.gpu) if selection.gpu is not None else None
         try:
             self._llama = self.factory(
                 model_path=str(path), n_ctx=self.cfg.n_ctx, seed=0, verbose=False, **selection.options
@@ -104,6 +113,13 @@ class LlamaEngine:
         except (ValueError, RuntimeError, OSError) as e:
             raise EngineError(f"Could not load {selection.model}: {e}") from e
         self._key = key
+        if selection.gpu is not None:
+            after = self.gpu_free_mb(selection.gpu)
+            if before is None or after is None:
+                logger.warning("could not measure the VRAM {} uses on GPU {}", selection.model, selection.gpu)
+            else:
+                self._vram = (selection.gpu, max(0, before - after))
+                logger.info("{} uses {} MiB on GPU {}", selection.model, self._vram[1], selection.gpu)
         return self._llama
 
     def chat(self, selection: Selection, system: str, user: str, max_tokens: int) -> Reply:
@@ -149,4 +165,5 @@ class LlamaEngine:
             self._llama.close()
             self._llama = None
             self._key = None
+            self._vram = None
             gc.collect()

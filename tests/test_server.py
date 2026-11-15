@@ -43,4 +43,5 @@ def test_health_reports_each_service(client, harness):
     body = client.get("/health").json()
     assert body["gpu_offload"] is True
     assert body["model_downloaded"] is True
+    assert body["gpus_busy"] is False
     assert "LanguageTool" in body["languagetool"]
