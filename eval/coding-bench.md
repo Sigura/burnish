@@ -18,6 +18,7 @@ models. Coordination with llm_coder runs through `eval/coord/burnish.md` (symlin
 | 3a. greedy (temperature 0), one seed | done: Qwen3.8-27B Q6_K and IQ3_S, Coder-Next UD-IQ3_S; llm_coder: Qwen3.6, RCO-37g |
 | 3b. recommended sampling, 3 seeds | done for all 6 candidates (Kotlin for burnish's 3 models greedy only) |
 | 4. final per-language comparison and OpenCode routing advice | done, section 4 |
+| 4a. DeepSeek V4.1 Flash and review setups (llm_coder, 29 tasks) | done: DeepSeek 3 seeds, Qwen3.8 alone 3 seeds, review setups seed 1 only |
 | model files for llm_coder | copied to `~/llm_coder/llm/models/burnish/` (sha256-verified) |
 | GPU 1 swap (2026-11-15) | done: new RTX 3090 Ti passes the load test, no HW throttling; power-limited speed, see "GPU health" |
 
@@ -245,7 +246,34 @@ Routing advice for OpenCode on this host (per-agent `model` setting):
 - No per-language split is needed: no language has a different winner.
 
 Limits: single-turn tasks with one retry, 25 + 4 tasks, 3 seeds; no multi-turn agent tasks (llm_coder's OpenCode
-e2e covers that), thinking off throughout; DeepSeek V4.1 Flash not scored on this eval.
+e2e covers that), thinking off throughout.
+
+### DeepSeek V4.1 Flash and review setups (llm_coder runs, Nov 15, 29 tasks)
+
+Run by llm_coder on its OpenCode stack (details: `~/llm_coder/llm/results/two-model-2026-11-13/report.md`, "Coding eval,
+Nov 15"). DeepSeek V4.1 Flash 1017 unsloth UD-Q2_K_XL on GPUs 0,1 with experts in CPU RAM, card sampling (temperature
+1.0, top_p 1.0). Qwen3.8-27B UD-Q6_K on GPU 2, same sampling as above. Review setups use `--review-url`: before each
+test run a reviewer model sees only the task and the code and answers OK or up to 10 defect lines; if not OK, Qwen
+revises once. Thinking off, 3 seeds unless noted, mean ± sd:
+
+| setup | seeds | pass@1 (29) | pass@2 (29) | pass@2 Python + bash (25) | Python p@2 /16 | bash p@2 /9 | Kotlin p@2 /4 | time per run |
+|---|---|---|---|---|---|---|---|---|
+| DeepSeek V4.1 Flash alone | 3 | **19.0 ± 3.0** | **24.7 ± 2.9** | **21.0 ± 2.6** | **13.3** | **7.7** | 3.7 | 7536–10754 s |
+| Qwen3.8-27B + DeepSeek review | 1 | 14 | 22 | 18 | 12 | 6 | 4 | 7360 s |
+| Qwen3.8-27B + Qwen3.6 MTP review | 1 | 14 | 21 | 17 | 11 | 6 | 4 | 4570 s |
+| Qwen3.8-27B UD-Q6_K alone | 3 | 10.0 ± 4.0 | 16.7 ± 1.5 | 13.3 ± 1.2 | 9.3 | 4.0 | 3.3 | 2544 s |
+
+- **DeepSeek alone leads by ~8 tasks at pass@2** over Qwen3.8-27B alone, more than the seed spread, at ~3–4× the time
+  per run and two GPUs plus the CPU.
+- **A reviewer adds 4–5 tasks to Qwen3.8-27B at pass@2** (seed 1 only; Qwen alone spreads 15–18) but doesn't reach
+  DeepSeek alone. The Qwen3.6 MTP reviewer gives about the same gain as DeepSeek at ~60% of the time.
+- Qwen3.8-27B alone here (13.3 of 25) agrees with burnish's Nov 14 runs of the same file (15.0 ± 2.6) within one sd.
+- DeepSeek seed 1 is pieced together: the 11:46 host reset cut the run after 23 tasks and the last 7 bash tasks were
+  re-run (`*-deepseek-v4.1-flash-rec-s1-part.json`). Its numbers (pass@1 22, pass@2 28) come from llm_coder's report;
+  the file with the first 23 tasks isn't in `results/`.
+- DeepSeek seed 3 took 10754 s vs 7536 s for seed 2. It overlapped burnish's CPU-only gemma4 imatrix and KLD runs
+  (48 threads), which likely slowed its CPU experts; not verified, so its time isn't comparable.
+- Result files: `results/20261115-*` (labels `deepseek-v4.1-flash-rec-s*`, `qwen3.8-27b-rec-s*`, `qwen3.8-27b-review-*-s1`).
 
 ## Reboot for the GPU 1 swap
 
