@@ -1,0 +1,17 @@
+lang = "kotlin"
+file = "solution.kt"
+prompt = """
+In Kotlin (JVM, standard library only, no JSON libraries, top-level declarations in the default package), implement
+`fun toJson(value: Any?, indent: Int = 0): String` that serializes:
+
+- `null`, `Boolean`, `String`, `Int`, `Long`, `Double` (also `Float`), `Map<*, *>` with `String` keys, `List<*>` /
+  `Array<*>`, and Kotlin `enum` values (as their `name` string). Anything else, a non-String map key, or a
+  non-finite double (NaN, infinity) throws `IllegalArgumentException`.
+- Doubles: a whole number prints without a fraction only if it is an integer type; a `Double` like `2.0` prints `2.0`.
+  Use Kotlin's `toString()` for doubles (e.g. `1.0E-5` stays as Kotlin prints it).
+- Strings escape `"`, `\\\\`, and control characters below 0x20: `\\b \\f \\n \\r \\t` by name, others as `\\u00XX`
+  (lowercase hex). Non-ASCII characters are written as is.
+- `indent = 0`: compact output with no spaces at all (`{"a":1,"b":[1,2]}`).
+- `indent > 0`: pretty output; each nested element on its own line indented by `indent` spaces per level, a space
+  after `:`, empty maps/lists as `{}` / `[]`. Map entries keep their iteration order.
+"""

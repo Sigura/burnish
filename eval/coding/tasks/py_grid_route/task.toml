@@ -1,0 +1,17 @@
+lang = "python"
+file = "solution.py"
+prompt = """
+Implement `route(grid: list[str]) -> tuple[int, str] | None`.
+
+The grid has rows of equal length. Cells: `S` start (exactly one), `E` end (exactly one), `#` wall, `.` cost 1,
+digits `1`-`9` cost that digit, and lowercase letters which are teleport pads (each letter appears exactly 0 or 2
+times). Moving into a cell costs that cell's cost (`S` and `E` cost 1; a pad costs 1). Moves are `U`, `D`, `L`,
+`R` to orthogonal neighbours. Standing on a pad, you may additionally use move `T` to jump to the other pad with the
+same letter for cost 2.
+
+Return `(total_cost, moves)` for a cheapest path from S to E, where among all cheapest paths `moves` is the
+lexicographically smallest string over the alphabet ordered `D < L < R < T < U` (a shorter string that is a prefix
+of another is smaller). Return `None` if E is unreachable. Grids up to 60x60 must finish in well under a second.
+Raise `ValueError` for malformed grids (ragged rows, not exactly one S/E, a letter appearing once or more than twice,
+unknown characters).
+"""

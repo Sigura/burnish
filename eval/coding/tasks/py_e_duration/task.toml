@@ -1,0 +1,13 @@
+lang = "python"
+file = "solution.py"
+prompt = """
+Implement two functions for human-readable durations.
+
+`parse_duration(s: str) -> int` returns seconds. Input is one or more `<integer><unit>` parts with units `d`, `h`, `m`,
+`s` (in that order, each at most once, case-insensitive), optionally separated by single spaces, e.g. `1h30m`,
+`2d 4h`, `90s`, `0s`. Values may exceed the next unit (`90m` is valid). Raise `ValueError` for empty input, unknown
+units, wrong order, repeated units, missing numbers, or other characters.
+
+`format_duration(seconds: int) -> str` is the inverse in canonical form: largest units first, zero parts omitted, no
+spaces, e.g. `5400` -> `1h30m`, `0` -> `0s`, `86461` -> `1d1m1s`. Negative input raises `ValueError`.
+"""

@@ -1,0 +1,14 @@
+lang = "bash"
+file = "solution.sh"
+prompt = """
+Write a bash script `solution.sh` that reads text on stdin and prints the N most frequent words.
+
+Usage: `solution.sh [-n N] [-i]` (N defaults to 10). `-i` makes counting case-insensitive (words are
+lowercased). A word is a maximal run of ASCII letters, digits and apostrophes, but leading/trailing apostrophes
+are stripped and a token that is only apostrophes is ignored. Output lines are `COUNT WORD` (single space), sorted
+by count descending, then word ascending in byte order (LC_ALL=C). Fewer than N distinct words prints all of them;
+empty input prints nothing and exits 0. An invalid option or a non-positive/non-integer N prints a usage message to
+stderr and exits 2.
+
+Environment: GNU bash 5.2, GNU coreutils, GNU sed/grep/find, and `awk` is mawk (POSIX awk: no gawk extensions such as `asort`, `PROCINFO`, `gensub`, `length(array)` may work but do not rely on gawk-only features). No Python, Perl or jq.
+"""

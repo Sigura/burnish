@@ -1,0 +1,59 @@
+lang = "python"
+file = "cache.py"
+prompt = """
+`ttl_lru` is a memoizing decorator used across a service. It has several bugs reported by users: values that are
+`None` or falsy are recomputed every call, calls with the same keyword arguments in a different order miss the cache,
+recently read entries get evicted first, expired entries are sometimes returned, and `cache_info()` counts are
+wrong. Fix all bugs while keeping the API.
+
+Intended semantics:
+- `@ttl_lru(maxsize=128, ttl=None, clock=time.monotonic)`. Cache key: positional args plus keyword args regardless
+  of keyword order. `f(1, b=2)` and `f(1, 2)` are different keys (no signature binding).
+- At most `maxsize` entries; when full, evict the least recently USED entry (a hit counts as use).
+- With `ttl` (seconds), an entry older than `ttl` since it was stored is expired: a lookup of an expired entry is a
+  miss, the function is called again and the new value replaces it. An entry is expired when
+  `clock() - stored_at >= ttl`.
+- Exceptions raised by the function are not cached.
+- `wrapper.cache_info()` returns `(hits, misses, currsize)`; `wrapper.cache_clear()` empties the cache and resets
+  the counters.
+
+```python
+import functools
+import time
+from collections import OrderedDict
+
+
+def ttl_lru(maxsize=128, ttl=None, clock=time.monotonic):
+    def deco(fn):
+        data = OrderedDict()
+        hits = misses = 0
+
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            nonlocal hits, misses
+            key = args + tuple(kwargs.items())
+            entry = data.get(key)
+            if entry and entry[0]:
+                value, stored = entry
+                if ttl is None or clock() - stored <= ttl:
+                    hits += 1
+                    return value
+            misses += 1
+            value = fn(*args, **kwargs)
+            data[key] = (value, clock())
+            if len(data) > maxsize:
+                data.popitem(last=True)
+            return value
+
+        def cache_info():
+            return hits, misses, len(data)
+
+        def cache_clear():
+            data.clear()
+
+        wrapper.cache_info = cache_info
+        wrapper.cache_clear = cache_clear
+        return wrapper
+    return deco
+```
+"""

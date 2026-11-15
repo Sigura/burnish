@@ -1,0 +1,20 @@
+lang = "bash"
+file = "solution.sh"
+prompt = """
+Write `solution.sh [-n ATTEMPTS] [-d DELAY] [-b FACTOR] [-r CODES] -- COMMAND [ARGS...]`, a retry wrapper.
+
+- Runs COMMAND with its arguments exactly as given (spaces, globs, empty arguments preserved; no eval).
+- Retries while COMMAND exits non-zero, up to ATTEMPTS total runs (default 3). Exit with COMMAND's last exit
+  code; exit 0 as soon as it succeeds.
+- `-d DELAY` seconds before the first retry (default 1, may be fractional like 0.2), multiplied by FACTOR after each
+  retry (`-b`, default 2, may be fractional). Use `sleep`.
+- `-r CODES`: comma-separated exit codes that are retryable; any other non-zero code stops immediately. Default:
+  every non-zero code is retryable.
+- Before each retry print to stderr exactly: `retry: attempt K/N failed with exit code C, sleeping S s` where K is
+  the attempt that just failed (1-based), N is ATTEMPTS, and S is the delay formatted with `%g` semantics (e.g.
+  `0.2`, `1`, `0.4`). Print nothing on the last failed attempt.
+- COMMAND's own stdout/stderr pass through unchanged. stdin is passed to the first run only (later runs get
+  /dev/null). Missing `--` or COMMAND, or invalid option values: usage to stderr, exit 64.
+
+Environment: GNU bash 5.2, GNU coreutils, GNU sed/grep/find, and `awk` is mawk (POSIX awk: do not rely on gawk-only features such as `asort`, `PROCINFO`, `gensub`, `strftime`). No Python, Perl or jq.
+"""

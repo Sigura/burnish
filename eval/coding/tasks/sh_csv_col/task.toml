@@ -1,0 +1,19 @@
+lang = "bash"
+file = "solution.sh"
+prompt = """
+Write `solution.sh [-d DELIM] [-s] COLUMN [FILE]` that aggregates one column of an RFC 4180 CSV file with a header
+row (reads stdin when FILE is absent).
+
+- COLUMN is a header name (exact match) or `#N` for the 1-based column index.
+- Fields may be quoted with `"`; quoted fields may contain the delimiter, `""` (an escaped quote) and newlines.
+  Lines may end with `\n` or `\r\n`. DELIM is a single character (default `,`).
+- Without `-s`, print the values of the column, one per line (embedded newlines in a value are printed as the
+  two characters `\n`).
+- With `-s`, print `count=C sum=S min=M max=X` over the numeric values (integers or decimals with optional
+  sign, e.g. `-3`, `2.50`, `.5`); non-numeric and empty values are skipped and not counted. Numbers are printed
+  with `%g` formatting. If there are no numeric values print `count=0`.
+- A row with fewer fields than the header is treated as having empty fields. Unknown column: message to stderr,
+  exit 3. Unterminated quote at end of input: message to stderr, exit 4, no stdout.
+
+Environment: GNU bash 5.2, GNU coreutils, GNU sed/grep/find, and `awk` is mawk (POSIX awk: do not rely on gawk-only features such as `asort`, `PROCINFO`, `gensub`, `strftime`). No Python, Perl or jq.
+"""

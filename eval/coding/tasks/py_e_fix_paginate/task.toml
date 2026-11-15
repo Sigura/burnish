@@ -1,0 +1,27 @@
+lang = "python"
+file = "paginate.py"
+prompt = """
+`paginate` is used by an API to slice result lists. Users report a missing last item on some pages, wrong
+`total_pages`, and crashes on empty lists. Fix the bugs without changing the API.
+
+Intended behaviour: `page` is 1-based; `per_page` >= 1 (else `ValueError`); `page` >= 1 (else `ValueError`).
+`total_pages` is the number of pages needed for all items, but at least 1 (an empty list has one empty page).
+A page beyond `total_pages` returns an empty `items` list (not an error). `has_next` / `has_prev` say whether a
+page exists after / before this one within `1..total_pages`.
+
+```python
+def paginate(items, page, per_page):
+    if per_page < 0:
+        raise ValueError("per_page")
+    total_pages = len(items) // per_page
+    start = page * per_page
+    end = start + per_page - 1
+    return {
+        "items": items[start:end],
+        "page": page,
+        "total_pages": total_pages,
+        "has_next": page < total_pages - 1,
+        "has_prev": page > 0,
+    }
+```
+"""

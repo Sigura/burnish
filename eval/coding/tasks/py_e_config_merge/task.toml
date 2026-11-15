@@ -1,0 +1,13 @@
+lang = "python"
+file = "solution.py"
+prompt = """
+Implement `merge(base: dict, *overrides: dict) -> dict`, a deep merge for configuration layers (later wins).
+
+- Dicts are merged recursively. Any other value in an override replaces the base value (lists are replaced, not
+  concatenated).
+- A key whose override value is `None` deletes that key from the result.
+- A key ending in `+` appends: `{"plugins+": ["x"]}` appends the items to the base list `plugins` (missing base ->
+  new list). If the base value exists and is not a list, raise `TypeError`. The `+` key itself never appears in
+  the result.
+- Inputs must not be mutated, and the result must not share mutable dicts/lists with the inputs (a deep copy).
+"""

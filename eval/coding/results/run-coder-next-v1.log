@@ -1,0 +1,24 @@
+== checking prerequisites
+== llama-server on port 8092, -c 32768
+== coding eval (coder-next-ud-iq3s)
+py_apply_patch               --     25.5 s
+py_async_limit               --     16.0 s
+py_cron_next                 --    258.8 s
+py_expr_eval                 --     76.0 s
+py_fix_lru                   +       3.6 s
+py_fix_merge_intervals       --     13.6 s
+py_grid_route                --     20.4 s
+py_ini_interp                --     30.4 s
+py_semver_range              --     61.3 s
+py_shell_split               --     67.6 s
+py_typed_load                --     31.7 s
+sh_access_log                --     23.0 s
+sh_csv_col                   --     28.6 s
+sh_env_export                --    258.5 s
+sh_retry                     -+     18.5 s
+sh_rotate                    --     42.5 s
+sh_wordfreq                  -+     12.3 s
+all      pass@1 1/17  pass@2 3/17  tests@1 7.568/17  tests@2 8.743/17  988.3 s  124665 tokens  4 attempts capped
+python   pass@1 1/11  pass@2 1/11  tests@1 4.695/11  tests@2 5.043/11  604.9 s  76539 tokens  2 attempts capped
+bash     pass@1 0/6  pass@2 2/6  tests@1 2.873/6  tests@2 3.7/6  383.4 s  48126 tokens  2 attempts capped
+wrote /home/sigura/burnish/eval/coding/results/20261114-202902-coder-next-ud-iq3s.json

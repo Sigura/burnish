@@ -1,0 +1,47 @@
+== checking prerequisites
+== qwen3.8-27b-q6k-rec seed 1 on GPUs 0
+== qwen3.8-27b-iq3s-rec seed 1 on GPUs 2
+all      pass@1 10/25  pass@2 17/25  tests@1 15.497/25  tests@2 21.546/25  1942.7 s  88622 tokens  0 attempts capped
+python   pass@1 5/16  pass@2 11/16  tests@1 8.83/16  tests@2 14.612/16  1444.9 s  65795 tokens  0 attempts capped
+bash     pass@1 5/9  pass@2 6/9  tests@1 6.667/9  tests@2 6.934/9  497.8 s  22827 tokens  0 attempts capped
+wrote /home/sigura/burnish/eval/coding/results/20261114-211844-qwen3.8-27b-iq3s-rec-s1.json
+== qwen3.8-27b-iq3s-rec seed 2 on GPUs 2
+all      pass@1 11/25  pass@2 14/25  tests@1 16.437/25  tests@2 22.115/25  2458.1 s  78818 tokens  0 attempts capped
+python   pass@1 5/16  pass@2 8/16  tests@1 10.217/16  tests@2 13.695/16  1658.3 s  53378 tokens  0 attempts capped
+bash     pass@1 6/9  pass@2 6/9  tests@1 6.22/9  tests@2 8.42/9  799.8 s  25440 tokens  0 attempts capped
+wrote /home/sigura/burnish/eval/coding/results/20261114-212718-qwen3.8-27b-q6k-rec-s1.json
+== qwen3.8-27b-q6k-rec seed 2 on GPUs 0
+all      pass@1 5/25  pass@2 12/25  tests@1 11.826/25  tests@2 20.001/25  2068.0 s  93564 tokens  0 attempts capped
+python   pass@1 3/16  pass@2 7/16  tests@1 6.214/16  tests@2 12.594/16  1454.6 s  65537 tokens  0 attempts capped
+bash     pass@1 2/9  pass@2 5/9  tests@1 5.612/9  tests@2 7.407/9  613.4 s  28027 tokens  0 attempts capped
+wrote /home/sigura/burnish/eval/coding/results/20261114-215429-qwen3.8-27b-iq3s-rec-s2.json
+== qwen3.8-27b-iq3s-rec seed 3 on GPUs 2
+all      pass@1 8/25  pass@2 18/25  tests@1 16.811/25  tests@2 22.522/25  2277.4 s  73483 tokens  0 attempts capped
+python   pass@1 4/16  pass@2 10/16  tests@1 10.127/16  tests@2 14.022/16  1629.2 s  52460 tokens  0 attempts capped
+bash     pass@1 4/9  pass@2 8/9  tests@1 6.684/9  tests@2 8.5/9  648.2 s  21023 tokens  0 attempts capped
+wrote /home/sigura/burnish/eval/coding/results/20261114-220538-qwen3.8-27b-q6k-rec-s2.json
+== qwen3.8-27b-q6k-rec seed 3 on GPUs 0
+all      pass@1 6/25  pass@2 12/25  tests@1 13.399/25  tests@2 19.661/25  1928.2 s  89184 tokens  0 attempts capped
+python   pass@1 4/16  pass@2 8/16  tests@1 7.949/16  tests@2 13.015/16  1305.1 s  60207 tokens  0 attempts capped
+bash     pass@1 2/9  pass@2 4/9  tests@1 5.45/9  tests@2 6.646/9  623.1 s  28977 tokens  0 attempts capped
+wrote /home/sigura/burnish/eval/coding/results/20261114-222701-qwen3.8-27b-iq3s-rec-s3.json
+all      pass@1 11/25  pass@2 13/25  tests@1 17.617/25  tests@2 20.777/25  2145.1 s  69367 tokens  0 attempts capped
+python   pass@1 7/16  pass@2 9/16  tests@1 10.933/16  tests@2 14.093/16  1480.4 s  47779 tokens  0 attempts capped
+bash     pass@1 4/9  pass@2 4/9  tests@1 6.684/9  tests@2 6.684/9  664.7 s  21588 tokens  0 attempts capped
+wrote /home/sigura/burnish/eval/coding/results/20261114-224343-qwen3.8-27b-q6k-rec-s3.json
+== coder-next-iq3s-rec seed 1 on GPUs 0,2
+all      pass@1 6/25  pass@2 10/25  tests@1 14.357/25  tests@2 18.894/25  834.3 s  108200 tokens  0 attempts capped
+python   pass@1 6/16  pass@2 8/16  tests@1 9.507/16  tests@2 12.375/16  611.5 s  79517 tokens  0 attempts capped
+bash     pass@1 0/9  pass@2 2/9  tests@1 4.85/9  tests@2 6.519/9  222.8 s  28683 tokens  0 attempts capped
+wrote /home/sigura/burnish/eval/coding/results/20261114-225803-coder-next-iq3s-rec-s1.json
+== coder-next-iq3s-rec seed 2 on GPUs 0,2
+all      pass@1 7/25  pass@2 9/25  tests@1 13.746/25  tests@2 16.588/25  707.8 s  91429 tokens  0 attempts capped
+python   pass@1 5/16  pass@2 6/16  tests@1 8.51/16  tests@2 11.002/16  505.1 s  65483 tokens  0 attempts capped
+bash     pass@1 2/9  pass@2 3/9  tests@1 5.236/9  tests@2 5.586/9  202.7 s  25946 tokens  0 attempts capped
+wrote /home/sigura/burnish/eval/coding/results/20261114-231035-coder-next-iq3s-rec-s2.json
+== coder-next-iq3s-rec seed 3 on GPUs 0,2
+all      pass@1 6/25  pass@2 11/25  tests@1 14.171/25  tests@2 19.481/25  825.9 s  106955 tokens  0 attempts capped
+python   pass@1 4/16  pass@2 7/16  tests@1 8.144/16  tests@2 11.904/16  648.3 s  84023 tokens  0 attempts capped
+bash     pass@1 2/9  pass@2 4/9  tests@1 6.027/9  tests@2 7.577/9  177.6 s  22932 tokens  0 attempts capped
+wrote /home/sigura/burnish/eval/coding/results/20261114-232548-coder-next-iq3s-rec-s3.json
+== done

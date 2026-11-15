@@ -1,0 +1,24 @@
+== checking prerequisites
+== llama-server on port 8091, -c 32768
+== coding eval (Qwen3.8-27B-UD-Q6_K-nothink)
+py_apply_patch               --    126.6 s
+py_async_limit               --     64.4 s
+py_cron_next                 +      54.7 s
+py_expr_eval                 --    190.7 s
+py_fix_lru                   +      12.3 s
+py_fix_merge_intervals       -+     74.0 s
+py_grid_route                --     85.3 s
+py_ini_interp                +      53.6 s
+py_semver_range              -+    299.4 s
+py_shell_split               --    188.3 s
+py_typed_load                -+    183.7 s
+sh_access_log                --    161.8 s
+sh_csv_col                   --     85.4 s
+sh_env_export                --    110.8 s
+sh_retry                     +      33.4 s
+sh_rotate                    +      39.1 s
+sh_wordfreq                  --     40.8 s
+all      pass@1 5/17  pass@2 8/17  tests@1 13.528/17  tests@2 14.411/17  1804.3 s  63018 tokens  0 attempts capped
+python   pass@1 3/11  pass@2 6/11  tests@1 8.611/11  tests@2 9.494/11  1333.0 s  46559 tokens  0 attempts capped
+bash     pass@1 2/6  pass@2 2/6  tests@1 4.917/6  tests@2 4.917/6  471.3 s  16459 tokens  0 attempts capped
+wrote /home/sigura/burnish/eval/coding/results/20261114-162309-Qwen3.8-27B-UD-Q6_K-nothink.json

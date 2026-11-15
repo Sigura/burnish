@@ -1,0 +1,16 @@
+lang = "bash"
+file = "solution.sh"
+prompt = """
+Write `solution.sh [-n] DIR` that renames every regular file directly in DIR (not recursive) to its lowercase name
+(ASCII letters only; other characters unchanged).
+
+- Files already lowercase are left alone. Directories and symlinks are not renamed.
+- Never overwrite: if the lowercase name already exists (a file, dir or another rename target), skip that file and
+  print `skip: NAME (exists)` to stderr. When two files would map to the same new name, the one that comes first in
+  byte order (LC_ALL=C) of the ORIGINAL names is renamed and the other is skipped.
+- Print `OLD -> NEW` (basenames) for each rename, in byte order of the original names. `-n`: print the same but
+  rename nothing.
+- Exit 0 normally, 1 if any file was skipped, 2 for a missing DIR (message on stderr).
+
+Environment: GNU bash 5.2, GNU coreutils, GNU sed/grep/find, and `awk` is mawk (POSIX awk: do not rely on gawk-only features such as `asort`, `PROCINFO`, `gensub`, `strftime`). No Python, Perl or jq.
+"""

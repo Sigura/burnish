@@ -1,0 +1,20 @@
+lang = "python"
+file = "solution.py"
+prompt = """
+Implement `split_command(line: str, env: dict[str, str]) -> list[str]`, a subset of POSIX shell word splitting
+and parameter expansion. Do not use `shlex`.
+
+- Words are separated by unquoted spaces, tabs and newlines.
+- Single quotes: everything literal up to the next `'`.
+- Double quotes: literal except `\\` escapes only `$`, `"`, `\\` and newline (backslash-newline is removed);
+  any other backslash stays as is. `$` expansion happens inside double quotes.
+- Unquoted backslash escapes the next character (backslash-newline is removed entirely).
+- Expansion: `$NAME` (longest `[A-Za-z_][A-Za-z0-9_]*`), `${NAME}`, `${NAME:-default}` (default if unset or
+  empty; the default text itself undergoes `$` expansion), `${NAME-default}` (default only if unset).
+  Unset variables expand to an empty string. A `$` not followed by a name or `{` is literal.
+- Field splitting: the result of an UNQUOTED expansion is split on spaces/tabs/newlines into multiple words; quoted
+  expansions are not split. A word that is entirely an unquoted expansion that becomes empty is removed, but `""`
+  or `''` produce an empty word.
+- Adjacent quoted/unquoted parts join into one word (`a"b c"'d'` is `ab cd`).
+- Raise `ValueError` for an unterminated quote, an unterminated `${`, or a trailing unescaped backslash.
+"""

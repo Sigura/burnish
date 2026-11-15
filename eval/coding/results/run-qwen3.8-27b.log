@@ -1,0 +1,11 @@
+== checking prerequisites
+== llama-server on port 8089, -c 32768
+== coding eval (Qwen3.8-27B-GSQ-RCO-IQ3_S-nothink)
+py_apply_patch               --    427.8 s
+py_async_limit               +     122.9 s
+py_cron_next                 +     164.0 s
+py_expr_eval                 --    342.6 s
+py_fix_lru                   +      24.9 s
+py_fix_merge_intervals       --    270.8 s
+py_grid_route                +     129.2 s
+py_ini_interp                --    310.1 s
