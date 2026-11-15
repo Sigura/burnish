@@ -82,6 +82,34 @@ def chat(url: str, messages: list[dict], args) -> dict:
     return data
 
 
+REVIEW_SYSTEM = (
+    "You are a strict code reviewer. You get a task description and code written by another model.\n"
+    "Find real defects only: wrong behavior versus the task, crashes, unhandled edge cases the task implies, security\n"
+    "problems, broken commands. Ignore style, naming and missing comments.\n"
+    "Answer in at most 10 lines and nothing else: either the single word OK, or one line per defect in the form\n"
+    "line: problem -> fix"
+)
+
+
+def review(task_prompt: str, code: str, args) -> tuple[str, float]:
+    """Independent review by another model: sees only the task and the code, answers OK or a few defect lines."""
+    numbered = "\n".join(f"{i:4} {line}" for i, line in enumerate(code.splitlines(), 1))
+    body = {"messages": [{"role": "system", "content": REVIEW_SYSTEM},
+                         {"role": "user", "content": f"Task: {task_prompt}\n\n{numbered}"}],
+            "max_tokens": 600, "temperature": 0.2, "seed": args.seed,
+            "chat_template_kwargs": {"enable_thinking": False}}
+    if args.review_model:
+        body["model"] = args.review_model
+    headers = {"Content-Type": "application/json"}
+    if os.environ.get("CODING_EVAL_REVIEW_KEY"):
+        headers["Authorization"] = f"Bearer {os.environ['CODING_EVAL_REVIEW_KEY']}"
+    req = urllib.request.Request(f"{args.review_url}/v1/chat/completions", json.dumps(body).encode(), headers)
+    start = time.monotonic()
+    with urllib.request.urlopen(req, timeout=3600) as resp:
+        data = json.load(resp)
+    return (data["choices"][0]["message"].get("content") or "").strip(), time.monotonic() - start
+
+
 def solve(task: dict, args) -> dict:
     prompt = f"{task['prompt'].strip()}\n\nWrite the file `{task['file']}`."
     messages = [{"role": "system", "content": SYSTEM}, {"role": "user", "content": prompt}]
@@ -101,6 +129,21 @@ def solve(task: dict, args) -> dict:
         reply = choice["message"].get("content") or ""
         capped = choice.get("finish_reason") == "length"
         code = extract_code(reply)
+        reviewed = None
+        if code is not None and args.review_url:
+            verdict, review_seconds = review(task["prompt"].strip(), code, args)
+            reviewed = {"verdict": verdict, "seconds": round(review_seconds, 1)}
+            data["_seconds"] += review_seconds
+            if verdict.rstrip(".").upper() != "OK":
+                messages += [{"role": "assistant", "content": reply},
+                             {"role": "user", "content": f"A reviewer reported:\n```\n{verdict}\n```\nFix the real defects "
+                                                         f"(ignore findings that are wrong) and reply with the corrected "
+                                                         f"complete `{task['file']}`."}]
+                revised = chat(args.url, messages, args)
+                data["_seconds"] += revised["_seconds"]
+                reply = revised["choices"][0]["message"].get("content") or ""
+                capped = revised["choices"][0].get("finish_reason") == "length"
+                code = extract_code(reply)
         if code is None:
             passed = False
             output = f"reply cut off at --max-tokens {args.max_tokens}" if capped else "no fenced code block in the reply"
@@ -109,7 +152,8 @@ def solve(task: dict, args) -> dict:
         usage = data.get("usage", {})
         attempts.append({"passed": passed, "capped": capped, "output": output[-FEEDBACK_CHARS:],
                          "seconds": round(data["_seconds"], 1),
-                         "completion_tokens": usage.get("completion_tokens"), "reply": reply})
+                         "completion_tokens": usage.get("completion_tokens"), "reply": reply,
+                         **({"review": reviewed} if reviewed else {})})
         if passed:
             break
         messages += [{"role": "assistant", "content": reply},
@@ -158,6 +202,9 @@ def main():
         parser.add_argument(f"--{key.replace('_', '-')}", type=int if key == "top_k" else float,
                             help="sent to the server only when given")
     parser.add_argument("--max-tokens", type=int, default=32768)
+    parser.add_argument("--review-url", help="reviewer endpoint: each attempt's code is reviewed and revised once "
+                                             "before the tests run (key: env CODING_EVAL_REVIEW_KEY)")
+    parser.add_argument("--review-model", help="reviewer model name for router-mode servers")
     parser.add_argument("--no-think", action="store_true", help="send chat_template_kwargs.enable_thinking=false")
     parser.add_argument("--ref", action="store_true", help="check reference solutions instead of querying a model")
     parser.add_argument("--rescore", metavar="RESULT_JSON",
