@@ -171,3 +171,31 @@ Findings:
   0.002–0.05, and not in order of bits: IQ4_XS was worse than IQ3_S for layers 0–2.
 - **Sweep cost.** About 1.5 hours across two GPUs, mostly the Python assembler writing an 11.5 GB file for
   every variant at about 75 MB/s. The KL measurement itself takes about 20 s.
+
+### Calibration on burnish-style prompts
+
+`quant/run_fix.sh` rebuilds the Q4_0 imatrix from burnish's own kind of input, on the CPU. The calibration set has
+483 chat-format fix/polish prompts, 110k tokens. Each one renders Gemma 4's template with burnish's real system
+prompts and has the corrected text as the model turn. The texts are wikitext-2 train sentences with synthetic
+errors: agreement and homophone swaps, typos, articles, commas, apostrophes and case. The code checks they are
+disjoint from `sentences.tsv` and `polish_cases.jsonl`. The KLD is measured on the model turns of 60 held-out
+prompts from the same generator (2287 tokens), through llama-cpp-python, because `llama-perplexity` can't parse
+the chat tokens.
+
+| file | KLD vs bf16, fix prompts | p99 | same top token | all-mode exact | all-mode over-correction | polish cases (all) |
+|---|---|---|---|---|---|---|
+| Google QAT Q4_0 | 0.00138 | 0.0223 | 99.78% | 79.8% | 17.3% | 98.9% |
+| Q4_0, wikitext imatrix | **0.00088** | **0.0155** | 99.78% | 78.8% | 17.3% | 98.9% |
+| Q4_0, fix-prompt imatrix | 0.00098 | 0.0229 | **99.87%** | **82.7%** | **15.4%** | **100%** |
+
+All three score 99.0% hybrid and 99.0% LLM-only exact. The burnish eval ran on GPU 3 while the CPU did the KLD
+runs, so its latencies are left out.
+
+Findings:
+- **The fix-prompt imatrix doesn't beat the wikitext one on KLD**, even on prompts from its own generator. Both
+  imatrix files beat Google's on the mean. The fix-prompt file has a worse tail (p99 as high as Google's) and
+  2 more matching top tokens out of 2287.
+- **In mode `all`, the new file rewrites less in the polish step.** It keeps `config` and `docs` where the other
+  two expand them, and gives `They're` instead of `They are`. It is 3–4 sentences out of 104, within noise.
+- The calibration texts are encyclopedic, not chat or email. A corpus closer to burnish's real input might do
+  better; this one doesn't justify switching the default `gemma4:26b-a4b-imat` file.

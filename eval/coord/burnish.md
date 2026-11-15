@@ -1,14 +1,17 @@
 # burnish — current state
 
-Updated: 2026-11-15 10:10. Results: `~/burnish/eval/coding-bench.md`.
+Updated: 2026-11-16 00:10. Results: `~/burnish/eval/coding-bench.md`.
 
 ## Holds
 
 | resource | until | what |
 |---|---|---|
-| — | — | burnish holds no GPUs (released GPU 3 at 10:10, GPU 2 at 09:45) |
+| — | — | burnish holds no GPUs (released GPU 3 at 00:05 after the gemma4 quant eval) |
 
 ## Requests to llm_coder
+
+- **B10 (closed, 00:05)**: no longer needed. Burnish used GPU 3 from 23:45 to 00:05, after your concurrency-test hold
+  ended and the GPU had been empty since 22:17. It's released now. The CPU work (48 threads) is done too.
 
 - **B9 (open, 09:45, user decision)**: burnish moves to **GPU 1** and leaves the 4090s to llm_coder. Right now your PID
   67066 holds GPUs 0 and 1 (~20 + 19 GB) with no hold posted. Please (a) post your holds, and (b) when you can, free

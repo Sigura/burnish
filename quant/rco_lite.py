@@ -2,6 +2,7 @@
 
 Pipeline (each step is a subcommand, run in order):
   data      wikitext-2 train (imatrix calibration) and test (KL divergence)
+  corpus    burnish-style calibration and held-out test sets: chat-format fix/polish prompts (burnish venv)
   convert   bf16 QAT checkpoint -> bf16 GGUF
   imatrix   importance matrix from the bf16 GGUF
   kld-base  reference log-probs of the bf16 model
@@ -9,6 +10,8 @@ Pipeline (each step is a subcommand, run in order):
   sweep     KL divergence of the base mix with one layer group swapped to each alternative
   allocate  multiple-choice knapsack over the sweep deltas under a size budget
   build     assemble the allocated mix and measure its real KL divergence
+  quantize-fix  Q4_0 with the imatrix from `imatrix --corpus fix`
+  kld-fix   KL divergence vs bf16 on the model turns of the held-out fix set (burnish venv)
 
 Only the MoE expert tensors are searched; they are 90% of the weights. Everything else keeps the
 layout of Google's QAT Q4_0 release (Q4_0, token embeddings Q6_K).
@@ -17,6 +20,7 @@ layout of Google's QAT Q4_0 release (Q4_0, token embeddings Q6_K).
 import argparse
 import json
 import os
+import random
 import re
 import subprocess
 import sys
@@ -33,8 +37,13 @@ PY = WORK / "venv/bin/python"
 SRC = WORK / "src/gemma-4-26B-A4B-it-qat-q4_0-unquantized"
 BF16 = WORK / "gguf/gemma4-26b-a4b-qat-bf16.gguf"
 IMATRIX = WORK / "imatrix.gguf"
+IMATRIX_FIX = WORK / "imatrix-fix.gguf"
 DATA = WORK / "data"
+FIX_CALIB = DATA / "fix.calib.txt"
+FIX_TEST = DATA / "fix.test.jsonl"
 KLD_BASE = WORK / "kld/bf16.kld"
+KLD_FIX_BASE = WORK / "kld/bf16-fix.npy"
+EVAL = Path(__file__).resolve().parent.parent / "eval"
 DB = WORK / "db"
 SWEEP = WORK / "sweep.json"
 OUT = WORK / "out"
@@ -90,6 +99,142 @@ def cmd_data(_):
     print("data ready:", *sorted(p.name for p in DATA.iterdir()))
 
 
+def wiki_sentences(lines):
+    """Clean sentences of 8-40 words per paragraph, with wikitext's tokenization spaces undone."""
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("="):
+            continue
+        text = line.replace(" @-@ ", "-").replace(" @,@ ", ",").replace(" @.@ ", ".")
+        text = re.sub(r" (?=[,.;:!?%)\]]|'s\b|n't\b)", "", text)
+        text = re.sub(r"(?<=[(\[]) ", "", text)
+        sents = [s for s in re.split(r"(?<=[.!?])(?<! [A-Z]\.)(?<!Mr\.)(?<!Dr\.)(?<!St\.) (?=[A-Z])", text)
+                 if 8 <= len(s.split()) <= 40 and not re.search(r'[";<>@–—]|\(|\)', s) and s[-1] in ".!?"]
+        if sents:
+            yield sents
+
+
+SWAPS = {"was": "were", "were": "was", "has": "have", "have": "has", "is": "are", "are": "is", "does": "do",
+         "do": "does", "their": "there", "there": "their", "its": "it's", "it's": "its", "than": "then",
+         "then": "than", "your": "you're", "a": "an", "an": "a", "to": "too", "who": "whom"}
+
+
+KINDS = {
+    "swap": lambda i, lead, core, tail: core.lower() in SWAPS,
+    "typo": lambda i, lead, core, tail: len(core) >= 5 and core.isalpha(),
+    "apostrophe": lambda i, lead, core, tail: "'" in core,
+    "drop": lambda i, lead, core, tail: i > 0 and not lead and not tail and core.lower() in ("the", "a", "an"),
+    "comma": lambda i, lead, core, tail: tail == ",",
+    "double": lambda i, lead, core, tail: not lead and not tail and len(core) <= 4,
+    "lower": lambda i, lead, core, tail: i == 0 and core[0].isupper(),
+}
+
+
+def corrupt_once(words, rng):
+    # Pick the kind first, then a word it applies to, so rare kinds such as agreement swaps are not starved.
+    kind = rng.choice(["swap"] * 4 + ["typo"] * 3 + ["apostrophe", "drop", "comma", "double", "lower"])
+    parts = [re.match(r"^(\W*)([\w']+)(\W*)$", w) for w in words]
+    spots = [i for i, m in enumerate(parts) if m and KINDS[kind](i, *m.groups())]
+    if not spots:
+        return
+    i = rng.choice(spots)
+    lead, core, tail = parts[i].groups()
+    if kind == "swap":
+        new = SWAPS[core.lower()]
+        words[i] = lead + (new.capitalize() if core[0].isupper() else new) + tail
+    elif kind == "typo":
+        j = rng.randrange(1, len(core) - 1)
+        core = rng.choice([core[:j] + core[j + 1] + core[j] + core[j + 2:], core[:j] + core[j + 1:],
+                           core[:j] + core[j] + core[j:]])
+        words[i] = lead + core + tail
+    elif kind == "apostrophe":
+        words[i] = lead + core.replace("'", "") + tail
+    elif kind == "drop":
+        del words[i]
+    elif kind == "comma":
+        words[i] = lead + core
+    elif kind == "double":
+        words.insert(i, core.lower() if i else core)
+    else:
+        words[0] = lead + core[0].lower() + core[1:] + tail
+
+
+def corrupt(text, rng):
+    """One to three edits of the kinds in eval/sentences.tsv: agreement, homophones, typos, apostrophes, articles."""
+    words = text.split(" ")
+    target = rng.choice([1, 1, 2, 2, 3])
+    for _ in range(50):
+        before = list(words)
+        corrupt_once(words, rng)
+        if words != before:
+            target -= 1
+            if not target:
+                break
+    return " ".join(words)
+
+
+def eval_texts():
+    """Every sentence of the burnish evals, lower-cased, to keep them out of the corpus."""
+    texts = set()
+    for line in (EVAL / "sentences.tsv").read_text(encoding="utf-8").splitlines()[1:]:
+        texts.update(line.split("\t"))
+    for line in (EVAL / "polish_cases.jsonl").read_text(encoding="utf-8").splitlines():
+        texts.add(json.loads(line)["input"])
+    return {" ".join(t.lower().split()) for t in texts if t.strip()}
+
+
+def cmd_corpus(args):
+    """Chat-format fix/polish prompts as burnish sends them, each followed by the corrected text as the model turn.
+
+    Source texts are wikitext-2 train sentences with synthetic errors; the last 20% of paragraphs give the test set.
+    """
+    from llama_cpp import Llama
+    from llama_cpp.llama_chat_format import Jinja2ChatFormatter
+    from burnish.pipeline import system_prompt
+
+    need(BF16, DATA / "wiki.train.raw")
+    llama = Llama(str(BF16), vocab_only=True, verbose=False)
+    special = lambda t: llama.detokenize([t], special=True).decode()
+    fmt = Jinja2ChatFormatter(template=llama.metadata["tokenizer.chat_template"],
+                              eos_token=special(llama.token_eos()), bos_token=special(llama.token_bos()))
+    # The template closes a model turn with its own marker; find it by rendering a finished turn.
+    done = fmt(messages=[{"role": "user", "content": "x"}, {"role": "assistant", "content": "\x00"}]).prompt
+    end = done.split("\x00", 1)[1].split("\n", 1)[0]
+
+    paragraphs = list(wiki_sentences(DATA.joinpath("wiki.train.raw").read_text(encoding="utf-8").splitlines()))
+    cut = len(paragraphs) * 4 // 5
+    banned = eval_texts()
+    rng = random.Random(0)
+
+    def examples(pool):
+        while True:
+            sents = rng.choice(pool)
+            k = rng.randrange(len(sents))
+            clean = " ".join(sents[k:k + rng.choice([1, 1, 2, 3])])
+            norm = " ".join(clean.lower().split())
+            if any(b in norm for b in banned):
+                continue
+            text = clean if rng.random() < 0.1 else corrupt(clean, rng)
+            if " ".join(text.lower().split()) in banned:
+                continue
+            step = "polish" if rng.random() < 0.25 else "fix"
+            prompt = fmt(messages=[{"role": "system", "content": system_prompt(step, False)},
+                                   {"role": "user", "content": f"<text>\n{text}\n</text>"}]).prompt
+            yield prompt, clean + end
+
+    tokens, calib = 0, []
+    for prompt, answer in examples(paragraphs[:cut]):
+        calib.append(prompt + answer + "\n")
+        tokens += len(llama.tokenize((prompt + answer).encode(), add_bos=False, special=True))
+        if tokens >= args.calib_tokens:
+            break
+    FIX_CALIB.write_text("".join(calib), encoding="utf-8")
+    gen = examples(paragraphs[cut:])
+    test = [next(gen) for _ in range(args.test_examples)]
+    FIX_TEST.write_text("".join(json.dumps({"prompt": p, "answer": a}) + "\n" for p, a in test), encoding="utf-8")
+    print(f"{FIX_CALIB}: {len(calib)} examples, {tokens} tokens; {FIX_TEST}: {len(test)} examples")
+
+
 def cmd_convert(_):
     need(SRC / "config.json")
     BF16.parent.mkdir(parents=True, exist_ok=True)
@@ -99,9 +244,11 @@ def cmd_convert(_):
 # The bf16 model (~48 GB) does not fit one GPU: no -ngl here, so llama.cpp's --fit (on by default)
 # offloads what fits on the visible GPUs and runs the rest on the CPU.
 def cmd_imatrix(args):
-    need(BF16, DATA / "wiki.train.raw")
-    run([BIN / "llama-imatrix", "-m", BF16, "-f", DATA / "wiki.train.raw", "-o", IMATRIX,
-         "-c", CTX, "--chunks", args.chunks])
+    fix = args.corpus == "fix"
+    text, out = (FIX_CALIB, IMATRIX_FIX) if fix else (DATA / "wiki.train.raw", IMATRIX)
+    need(BF16, text)
+    run([BIN / "llama-imatrix", "-m", BF16, "-f", text, "-o", out, "-c", CTX, "--chunks", args.chunks]
+        + (["--parse-special"] if fix else []) + (["-t", args.threads] if args.threads else []))
 
 
 def cmd_kld_base(_):
@@ -111,9 +258,9 @@ def cmd_kld_base(_):
          "--chunks", KLD_CHUNKS, "--kl-divergence-base", KLD_BASE])
 
 
-def quantize(gate_up, down, out):
+def quantize(gate_up, down, out, imatrix=IMATRIX):
     overrides = [f"{GATE_UP}={gate_up}", f"{DOWN}={down}", "token_embd=q6_k"]
-    cmd = [BIN / "llama-quantize", "--imatrix", IMATRIX]
+    cmd = [BIN / "llama-quantize", "--imatrix", imatrix]
     for o in overrides:
         cmd += ["--tensor-type", o]
     run(cmd + [BF16, out, "Q4_0", str(os.cpu_count())])
@@ -131,6 +278,57 @@ def cmd_quantize(_):
         tmp = path.with_suffix(".part")
         quantize(gu, dn, tmp)
         tmp.rename(path)
+
+
+def cmd_quantize_fix(_):
+    need(BF16, IMATRIX_FIX)
+    OUT.mkdir(parents=True, exist_ok=True)
+    out = OUT / "gemma-4-26B-A4B-it-qat-q4_0-imat-fix.gguf"
+    tmp = out.with_suffix(".part")
+    quantize("q4_0", "q4_0", tmp, IMATRIX_FIX)
+    tmp.rename(out)
+    print("built", out)
+
+
+# llama-perplexity can't parse special tokens, so the chat-format KLD runs through llama-cpp-python.
+# Only the model turn is scored: the positions that predict the answer tokens and the end-of-turn marker.
+def cmd_kld_fix(args):
+    import numpy as np
+    from llama_cpp import Llama
+
+    model = Path(args.model) if args.model else BF16
+    need(model, FIX_TEST)
+    if args.model:
+        need(KLD_FIX_BASE)
+    tests = [json.loads(line) for line in FIX_TEST.read_text(encoding="utf-8").splitlines()]
+    llama = Llama(str(model), n_ctx=1024, n_gpu_layers=args.ngl, logits_all=True, verbose=False,
+                  n_threads=args.threads, n_threads_batch=args.threads)
+    rows = []
+    for t in tests:
+        n_prompt = len(llama.tokenize(t["prompt"].encode(), add_bos=False, special=True))
+        ids = llama.tokenize((t["prompt"] + t["answer"]).encode(), add_bos=False, special=True)
+        llama.reset()
+        llama.eval(ids)
+        logits = np.asarray(llama.scores[n_prompt - 1:len(ids) - 1], dtype=np.float32)
+        m = logits.max(axis=1, keepdims=True)
+        rows.append(logits - m - np.log(np.exp(logits - m).sum(axis=1, keepdims=True)))
+    logp = np.concatenate(rows)
+    if not args.model:
+        KLD_FIX_BASE.parent.mkdir(parents=True, exist_ok=True)
+        np.save(KLD_FIX_BASE, logp.astype(np.float16))
+        print(f"saved {KLD_FIX_BASE}: {len(tests)} examples, {len(logp)} scored tokens")
+        return
+    ref = np.load(KLD_FIX_BASE).astype(np.float32)
+    if ref.shape != logp.shape:
+        raise SystemExit(f"{KLD_FIX_BASE} has shape {ref.shape}, this run {logp.shape}: rebuild the base")
+    kld = (np.exp(ref) * (ref - logp)).sum(axis=1)
+    same = (ref.argmax(axis=1) == logp.argmax(axis=1)).mean()
+    r = {"model": str(model), "tokens": len(kld), "kld": float(kld.mean()), "kld_p99": float(np.percentile(kld, 99)),
+         "same_top_p": float(100 * same)}
+    OUT.mkdir(parents=True, exist_ok=True)
+    (OUT / f"kld-fix-{model.stem}.json").write_text(json.dumps(r, indent=1))
+    print(f"{model.name}: fix-set KLD {r['kld']:.6f} (p99 {r['kld_p99']:.4f}), same top {r['same_top_p']:.2f}% "
+          f"over {r['tokens']} tokens")
 
 
 def assemble(choice, out, base_path=None):
@@ -314,12 +512,24 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("data").set_defaults(fn=cmd_data)
+    s = sub.add_parser("corpus")
+    s.add_argument("--calib-tokens", type=int, default=110_000, help="enough for 200 imatrix chunks of 512")
+    s.add_argument("--test-examples", type=int, default=60)
+    s.set_defaults(fn=cmd_corpus)
     sub.add_parser("convert").set_defaults(fn=cmd_convert)
     s = sub.add_parser("imatrix")
     s.add_argument("--chunks", type=int, default=200)
+    s.add_argument("--corpus", choices=["wiki", "fix"], default="wiki")
+    s.add_argument("--threads", type=int, help="CPU threads (default: llama.cpp's)")
     s.set_defaults(fn=cmd_imatrix)
     sub.add_parser("kld-base").set_defaults(fn=cmd_kld_base)
     sub.add_parser("quantize").set_defaults(fn=cmd_quantize)
+    sub.add_parser("quantize-fix").set_defaults(fn=cmd_quantize_fix)
+    s = sub.add_parser("kld-fix")
+    s.add_argument("model", nargs="?", help="GGUF to compare; without it, writes the bf16 reference")
+    s.add_argument("--ngl", type=int, default=0, help="layers on the GPU (0 = CPU only)")
+    s.add_argument("--threads", type=int, help="CPU threads (default: llama-cpp-python's)")
+    s.set_defaults(fn=cmd_kld_fix)
     s = sub.add_parser("sweep")
     s.add_argument("--gpus", type=int, nargs="+", default=[0])
     s.add_argument("--group-size", type=int, default=3)
