@@ -1,0 +1,23 @@
+lang = "python"
+file = "solution.py"
+prompt = """
+Implement `load(cls, data)` that builds an instance of a (possibly nested) `@dataclass` type `cls` from
+JSON-like `data` (dicts, lists, str, int, float, bool, None), validating types from the dataclass field annotations.
+
+Supported annotations: `int`, `float`, `str`, `bool`, `None`, nested dataclasses, `list[T]`, `dict[str, T]`,
+`tuple[T, ...]`, `tuple[A, B, C]` (fixed length, from a JSON list), `T | None` / `Optional[T]`, unions like `int | str`
+(try members left to right, first that loads wins; if none loads, the error path is the union's own path), and `Literal[...]` values (the value must equal a literal and have the same type). Annotations may be strings because
+the module uses `from __future__ import annotations`; resolve them with `typing.get_type_hints`.
+
+Rules:
+- `bool` is not accepted for `int` or `float`. An `int` is accepted for `float` and converted to float.
+  Nothing else is coerced (no "3" -> 3).
+- Missing keys use the field default or default_factory; a missing key without a default is an error.
+  Unknown keys are an error.
+- On any error raise `LoadError` (define it, subclass of `ValueError`) whose `path` attribute is the location
+  as a string, and whose `str()` starts with that path followed by `: `. Path format: `$` for the root, `.name` for a
+  field or dict key, `[i]` for list/tuple index, e.g. `$.servers[2].ports[0]`. For a missing field, the path points
+  at the missing field (`$.servers[2].host`). For `T | None` with non-null data, report the error from loading `T` (so the path can point deep inside it).
+  For unknown keys, the path points at the first unknown key in the
+  input dict's order.
+"""

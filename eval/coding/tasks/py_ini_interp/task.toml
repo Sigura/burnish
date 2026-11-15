@@ -1,0 +1,21 @@
+lang = "python"
+file = "solution.py"
+prompt = """
+Implement `load_ini(text: str) -> dict[str, dict[str, str]]`. Do not use `configparser`.
+
+- Sections: `[name]` (name trimmed, case-sensitive). Keys before any section go to section `""`, which appears in the result only if it has keys. A repeated section
+  header continues the same section.
+- Entries: `key = value` or `key: value` (first `=` or `:` splits). Keys are trimmed and lowercased; values trimmed.
+  A key without a separator is an error. Repeated keys: last wins.
+- Comments: lines starting with `#` or `;` (after optional whitespace). Inline comments: ` ;` or ` #` (whitespace
+  before the marker) end the value, unless inside double quotes.
+- Quoted values: a value fully wrapped in double quotes has the quotes removed and keeps inner whitespace;
+  `\\"` inside quotes is a literal quote.
+- Continuation: a non-empty line that starts with whitespace and follows an entry is appended to that entry's value
+  with a single `\\n` between (the continuation line is trimmed). Blank lines end a continuation.
+- Interpolation (after the whole file is read): `${key}` refers to a key in the same section, `${section:key}` to
+  another section; `$$` is a literal `$`. References are resolved recursively. Raise `ValueError` for undefined
+  references and for reference cycles (the message must contain the word `cycle` for cycles).
+- Raise `ValueError` with the 1-based line number in the message (`line N`) for syntax errors: missing separator,
+  unclosed `[`, a continuation line with no preceding entry, an unterminated quote.
+"""

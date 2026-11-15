@@ -1,0 +1,15 @@
+lang = "bash"
+file = "solution.sh"
+prompt = """
+Write `solution.sh DIR` that counts regular files under DIR recursively by extension and prints `EXT COUNT` lines
+sorted by count descending, then extension ascending (byte order).
+
+- The extension is the part after the last `.` of the basename, lowercased. Files with no dot, or whose only dot
+  is the leading one (`.bashrc`), count as `(none)`. `archive.tar.gz` counts as `gz`.
+- Skip anything inside directories named `.git` or `node_modules` (at any depth). Don't follow symlinks; symlinks
+  are not counted.
+- File names may contain spaces and newlines.
+- Missing or non-directory DIR: message to stderr, exit 1.
+
+Environment: GNU bash 5.2, GNU coreutils, GNU sed/grep/find, and `awk` is mawk (POSIX awk: do not rely on gawk-only features such as `asort`, `PROCINFO`, `gensub`, `strftime`). No Python, Perl or jq.
+"""

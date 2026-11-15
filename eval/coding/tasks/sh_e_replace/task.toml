@@ -1,0 +1,17 @@
+lang = "bash"
+file = "solution.sh"
+prompt = """
+Write `solution.sh [-n] [-b] OLD NEW FILE...` that replaces every occurrence of the literal string OLD with the
+literal string NEW in each FILE, in place.
+
+- OLD and NEW are literal: characters like `/ . * [ ] & \\ $ ^` have no special meaning. OLD must be non-empty
+  and contain no newline.
+- `-b` keeps a backup `FILE.bak` of each changed file. Unchanged files are not rewritten and get no backup.
+- `-n` is a dry run: change nothing, only report.
+- Print one line per changed file: `FILE: N` where N is the number of replacements. Files without matches print
+  nothing. Preserve file permissions and the presence/absence of a trailing newline.
+- Exit 0 if at least one file changed (or would change with -n), 1 if none, 2 on errors (missing file, bad usage)
+  with a message on stderr. Check all files exist before changing any.
+
+Environment: GNU bash 5.2, GNU coreutils, GNU sed/grep/find, and `awk` is mawk (POSIX awk: do not rely on gawk-only features such as `asort`, `PROCINFO`, `gensub`, `strftime`). No Python, Perl or jq.
+"""

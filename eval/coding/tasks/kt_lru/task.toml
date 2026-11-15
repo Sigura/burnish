@@ -1,0 +1,20 @@
+lang = "kotlin"
+file = "solution.kt"
+prompt = """
+In Kotlin (JVM, standard library only, top-level declarations in the default package), implement
+
+```kotlin
+class LruCache<K, V>(val capacity: Int, private val onEvict: (K, V) -> Unit = { _, _ -> })
+```
+
+- `capacity` must be >= 1, else `IllegalArgumentException` from the constructor.
+- `operator fun get(key: K): V?` returns the value and marks the key most recently used; `null` if absent.
+- `operator fun set(key: K, value: V)` inserts or updates (an update also marks it most recently used). When an
+  insert makes the size exceed `capacity`, evict the least recently used entry and call `onEvict(key, value)` for it.
+  Updating an existing key never evicts.
+- `fun remove(key: K): V?` removes without calling `onEvict`.
+- `val size: Int`, `fun keys(): List<K>` from least to most recently used, `operator fun contains(key: K): Boolean`
+  which does NOT change recency.
+- `null` values are allowed when `V` is nullable; `get` returning `null` is then ambiguous, which is acceptable,
+  but `contains` must report `true` for a key stored with a null value.
+"""

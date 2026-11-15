@@ -1,0 +1,17 @@
+lang = "python"
+file = "solution.py"
+prompt = """
+Implement `async def gather_limited(factories, limit: int, timeout: float | None = None) -> list` using asyncio.
+
+- `factories` is a list of zero-argument callables, each returning a coroutine (or other awaitable).
+- Run them with at most `limit` running at the same time; start them in list order as slots free up.
+  Do not call a factory before its task is about to start.
+- Return the results in the same order as `factories`.
+- If any task raises, cancel all running tasks, start no new ones, wait until the cancelled tasks have finished
+  their cleanup (e.g. `finally` blocks have run), then re-raise the first exception (the one that happened first in
+  time).
+- `timeout` (seconds) applies to each task individually; a task exceeding it counts as raising
+  `asyncio.TimeoutError` (`TimeoutError`).
+- If `gather_limited` itself is cancelled, cancel all running tasks, wait for them, and propagate the cancellation.
+- `limit < 1` raises `ValueError`. An empty list returns `[]`.
+"""

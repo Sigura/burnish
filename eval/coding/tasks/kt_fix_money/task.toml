@@ -1,0 +1,50 @@
+lang = "kotlin"
+file = "solution.kt"
+prompt = """
+This Kotlin ledger (JVM, standard library only) has bugs: totals drift by a cent, a failed transfer leaves money
+debited, splitting a bill loses cents, and two accounts with the same id can be created. Fix all bugs, keeping the
+public API.
+
+Intended semantics: amounts are `BigDecimal` with exactly 2 decimal places (inputs with more decimals are rejected
+with `IllegalArgumentException`; fewer are fine, `5` means `5.00`). Balances never go negative: a transfer that would
+overdraw throws `IllegalStateException` and changes nothing. Amounts must be positive. `split(total, n)` divides
+`total` into `n` parts that differ by at most one cent, sum exactly to `total`, with the larger parts first.
+`openAccount` with an existing id throws `IllegalArgumentException`. `balance` of an unknown id throws
+`NoSuchElementException`. `history(id)` lists the signed amounts applied to that account in order.
+
+```kotlin
+import java.math.BigDecimal
+import java.math.RoundingMode
+
+class Ledger {
+    private val balances = HashMap<String, Double>()
+    private val log = HashMap<String, MutableList<Double>>()
+
+    fun openAccount(id: String, initial: BigDecimal = BigDecimal.ZERO) {
+        balances[id] = initial.toDouble()
+        log[id] = mutableListOf()
+    }
+
+    fun balance(id: String): BigDecimal =
+        BigDecimal(balances[id] ?: 0.0).setScale(2, RoundingMode.HALF_UP)
+
+    fun transfer(from: String, to: String, amount: BigDecimal) {
+        val a = amount.toDouble()
+        balances[from] = balances.getValue(from) - a
+        log.getValue(from).add(-a)
+        if (balances.getValue(from) < 0) throw IllegalStateException("insufficient funds")
+        balances[to] = balances.getValue(to) + a
+        log.getValue(to).add(a)
+    }
+
+    fun history(id: String): List<BigDecimal> = log.getValue(id).map { BigDecimal(it).setScale(2, RoundingMode.HALF_UP) }
+
+    companion object {
+        fun split(total: BigDecimal, n: Int): List<BigDecimal> {
+            val part = total.divide(BigDecimal(n), 2, RoundingMode.DOWN)
+            return List(n) { part }
+        }
+    }
+}
+```
+"""

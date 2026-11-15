@@ -1,0 +1,14 @@
+lang = "python"
+file = "solution.py"
+prompt = """
+Implement `flatten(obj, sep=".") -> dict` and `unflatten(flat: dict, sep=".")`.
+
+`flatten` turns nested dicts and lists into a flat dict with path keys: dict keys are joined with `sep`, list items use
+their index (`a.0.b`). Empty dicts and empty lists are kept as leaf values (`{"a": {}}` -> `{"a": {}}`). Any other
+value is a leaf. The top-level object must be a dict (else `TypeError`). Keys must be strings that don't contain `sep`
+(else `ValueError`). Order: depth-first, in the input's order.
+
+`unflatten` is the inverse: a path segment that is a non-negative integer without leading zeros (`0`, `12`) creates
+a list. Lists must be dense: the indices of a list must be exactly `0..n-1` in any input order (else `ValueError`).
+Conflicts such as `{"a": 1, "a.b": 2}` raise `ValueError`.
+"""

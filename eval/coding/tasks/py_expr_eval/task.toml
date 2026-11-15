@@ -1,0 +1,24 @@
+lang = "python"
+file = "solution.py"
+prompt = """
+Implement `evaluate(expr: str, env: dict[str, float] | None = None) -> int | float` for a small expression
+language. Do not use `eval`, `exec`, `compile` or the `ast` module.
+
+Grammar, lowest to highest precedence:
+1. `a ? b : c` conditional, right-associative; `a` is true when non-zero. Only the chosen branch is evaluated
+   (so `1 ? 2 : 1/0` is 2).
+2. `||` then `&&` (short-circuit; result is 1 or 0).
+3. comparisons `== != < <= > >=`, non-associative: `1 < 2 < 3` is an error. Result 1 or 0.
+4. `+ -` left-associative.
+5. `* / %` left-associative. `/` on two ints gives an int when it divides exactly, else a float. `%` follows
+   Python semantics.
+6. unary `-`, `+`, `!` (`!x` is 1 if x == 0 else 0).
+7. `^` power, right-associative, binds tighter than unary minus on its left: `-2^2` is -4, `2^-1` is 0.5,
+   `2^3^2` is 512.
+8. atoms: integer literals (`42`), decimal literals (`1.5`, `.5`, `2.`), identifiers `[A-Za-z_][A-Za-z0-9_]*`
+   looked up in `env`, function calls `min(...)`, `max(...)` (1 or more args), `abs(x)`, and parentheses.
+
+Whitespace is ignored between tokens. Errors: raise `ZeroDivisionError` for division or modulo by zero,
+`NameError` for unknown variables or functions, and `SyntaxError` for anything malformed (including wrong
+argument counts for `abs`, empty input, trailing tokens, a lone `=`, `&`, `|`).
+"""

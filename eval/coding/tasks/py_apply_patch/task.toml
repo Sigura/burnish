@@ -1,0 +1,18 @@
+lang = "python"
+file = "solution.py"
+prompt = """
+Implement `apply_patch(original: str, diff: str) -> str` that applies a unified diff (as produced by
+`diff -u` / `git diff`, single file) to `original` and returns the patched text.
+
+- Ignore any lines before the first `@@` hunk header (`---`, `+++`, `diff --git`, `index ...`).
+- Hunk header: `@@ -l,s +l,s @@ optional section text`. A missing `,s` means a count of 1. A count of 0 with
+  start l means "after line l" (l may be 0 for the start of the file).
+- Hunk body lines start with ` ` (context), `-` (removed) or `+` (added). The line `\\ No newline at end of file`
+  refers to the preceding body line: that line has no trailing newline in its version (old for `-`/context,
+  new for `+`/context).
+- Apply hunks in order. Each hunk must match at exactly its stated old line number, taking into account the
+  line-count changes of earlier hunks. If context or removed lines don't match the text exactly, or the counts in the
+  header disagree with the body, raise `ValueError`.
+- Lines are split keeping their newline characters; the result must preserve the presence/absence of the final
+  newline correctly.
+"""

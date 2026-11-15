@@ -1,0 +1,380 @@
+{
+ "args": {
+  "url": "http://127.0.0.1:8090",
+  "model": null,
+  "label": "qwen3.6-35b-a3b-q4kxl-think",
+  "tasks": "*",
+  "langs": "python,bash",
+  "attempts": 2,
+  "seed": 0,
+  "temperature": 0.0,
+  "max_tokens": 8192,
+  "no_think": false,
+  "ref": false
+ },
+ "summary": {
+  "all": {
+   "tasks": 17,
+   "pass@1": 0,
+   "pass@2": 0,
+   "seconds": 1846.4,
+   "completion_tokens": 273055
+  },
+  "python": {
+   "tasks": 11,
+   "pass@1": 0,
+   "pass@2": 0,
+   "seconds": 1182.3,
+   "completion_tokens": 174751
+  },
+  "bash": {
+   "tasks": 6,
+   "pass@1": 0,
+   "pass@2": 0,
+   "seconds": 664.1,
+   "completion_tokens": 98304
+  }
+ },
+ "results": [
+  {
+   "id": "py_apply_patch",
+   "lang": "python",
+   "attempts": [
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 55.2,
+     "completion_tokens": 8192,
+     "reply": ""
+    },
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 55.3,
+     "completion_tokens": 8192,
+     "reply": ""
+    }
+   ]
+  },
+  {
+   "id": "py_async_limit",
+   "lang": "python",
+   "attempts": [
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 55.2,
+     "completion_tokens": 8192,
+     "reply": ""
+    },
+    {
+     "passed": false,
+     "output": "FAIL test_first_error_cancels_and_cleans_up:   File \"/tmp/ce-py_async_limit-0f34a3dj/test.py\", line 86, in test_first_error_cancels_and_cleans_up\n      assert sorted(cleaned) == [0, 3], cleaned\n             ^^^^^^^^^^^^^^^^^^^^^^^^^\n  AssertionError: [0, 3, 4]\n6/7 passed",
+     "seconds": 53.6,
+     "completion_tokens": 7934,
+     "reply": "```python\nimport asyncio\nfrom typing import List, Callable, Any\n\nasync def gather_limited(factories: List[Callable], limit: int, timeout: float | None = None) -> List[Any]:\n    if limit < 1:\n        raise ValueError(\"limit must be >= 1\")\n    if not factories:\n        return []\n\n    results = [None] * len(factories)\n    semaphore = asyncio.Semaphore(limit)\n    first_exception = None\n    first_exception_event = asyncio.Event()\n    \n    async def worker(index: int, factory: Callable):\n        nonlocal first_exception\n        try:\n            async with semaphore:\n                coro = factory()\n                if timeout is not None:\n                    result = await asyncio.wait_for(coro, timeout=timeout)\n                else:\n                    result = await coro\n                results[index] = result\n        except asyncio.CancelledError:\n            raise\n        except Exception as e:\n            if first_exception is None:\n                first_exception = e\n                first_exception_event.set()\n            raise\n\n    tasks = [asyncio.create_task(worker(i, f)) for i, f in enumerate(factories)]\n    \n    try:\n        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)\n    except asyncio.CancelledError:\n        for t in tasks:\n            if not t.done():\n                t.cancel()\n        await asyncio.gather(*tasks, return_exceptions=True)\n        raise\n\n    if first_exception is not None:\n        for t in tasks:\n            if not t.done():\n                t.cancel()\n        await asyncio.gather(*tasks, return_exceptions=True)\n        raise first_exception\n        \n    return results\n```"
+    }
+   ]
+  },
+  {
+   "id": "py_cron_next",
+   "lang": "python",
+   "attempts": [
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 55.2,
+     "completion_tokens": 8192,
+     "reply": ""
+    },
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 55.4,
+     "completion_tokens": 8192,
+     "reply": ""
+    }
+   ]
+  },
+  {
+   "id": "py_expr_eval",
+   "lang": "python",
+   "attempts": [
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 55.4,
+     "completion_tokens": 8192,
+     "reply": ""
+    },
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 55.6,
+     "completion_tokens": 8192,
+     "reply": ""
+    }
+   ]
+  },
+  {
+   "id": "py_fix_lru",
+   "lang": "python",
+   "attempts": [
+    {
+     "passed": false,
+     "output": "FAIL test_ttl:   File \"/tmp/ce-py_fix_lru-uvsguo5j/test.py\", line 63, in test_ttl\n      assert len(calls) == 2\n             ^^^^^^^^^^^^^^^\n  AssertionError\n6/7 passed",
+     "seconds": 46.3,
+     "completion_tokens": 6863,
+     "reply": "```python\nimport functools\nimport time\nfrom collections import OrderedDict\n\n\ndef ttl_lru(maxsize=128, ttl=None, clock=time.monotonic):\n    def deco(fn):\n        data = OrderedDict()\n        hits = misses = 0\n\n        @functools.wraps(fn)\n        def wrapper(*args, **kwargs):\n            nonlocal hits, misses\n            key = args + tuple(sorted(kwargs.items()))\n            if key in data:\n                value, stored = data[key]\n                if ttl is None or clock() - stored <= ttl:\n                    hits += 1\n                    data.move_to_end(key)\n                    return value\n            misses += 1\n            value = fn(*args, **kwargs)\n            data[key] = (value, clock())\n            if len(data) > maxsize:\n                data.popitem(last=False)\n            return value\n\n        def cache_info():\n            return hits, misses, len(data)\n\n        def cache_clear():\n            nonlocal hits, misses\n            data.clear()\n            hits = misses = 0\n\n        wrapper.cache_info = cache_info\n        wrapper.cache_clear = cache_clear\n        return wrapper\n    return deco\n```"
+    },
+    {
+     "passed": false,
+     "output": "FAIL test_ttl:   File \"/tmp/ce-py_fix_lru-f8o8ad0b/test.py\", line 63, in test_ttl\n      assert len(calls) == 2\n             ^^^^^^^^^^^^^^^\n  AssertionError\n6/7 passed",
+     "seconds": 29.1,
+     "completion_tokens": 4306,
+     "reply": "```python\nimport functools\nimport time\nfrom collections import OrderedDict\n\n\ndef ttl_lru(maxsize=128, ttl=None, clock=time.monotonic):\n    def deco(fn):\n        data = OrderedDict()\n        hits = misses = 0\n\n        @functools.wraps(fn)\n        def wrapper(*args, **kwargs):\n            nonlocal hits, misses\n            key = args + tuple(sorted(kwargs.items()))\n            if key in data:\n                value, stored = data[key]\n                if ttl is None or clock() - stored <= ttl:\n                    hits += 1\n                    data.move_to_end(key)\n                    return value\n            misses += 1\n            value = fn(*args, **kwargs)\n            data[key] = (value, clock())\n            if len(data) > maxsize:\n                data.popitem(last=False)\n            return value\n\n        def cache_info():\n            return hits, misses, len(data)\n\n        def cache_clear():\n            nonlocal hits, misses\n            data.clear()\n            hits = misses = 0\n\n        wrapper.cache_info = cache_info\n        wrapper.cache_clear = cache_clear\n        return wrapper\n    return deco\n```"
+    }
+   ]
+  },
+  {
+   "id": "py_fix_merge_intervals",
+   "lang": "python",
+   "attempts": [
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 55.4,
+     "completion_tokens": 8192,
+     "reply": ""
+    },
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 55.5,
+     "completion_tokens": 8192,
+     "reply": ""
+    }
+   ]
+  },
+  {
+   "id": "py_grid_route",
+   "lang": "python",
+   "attempts": [
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 55.2,
+     "completion_tokens": 8192,
+     "reply": ""
+    },
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 55.4,
+     "completion_tokens": 8192,
+     "reply": ""
+    }
+   ]
+  },
+  {
+   "id": "py_ini_interp",
+   "lang": "python",
+   "attempts": [
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 55.3,
+     "completion_tokens": 8192,
+     "reply": ""
+    },
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 55.5,
+     "completion_tokens": 8192,
+     "reply": ""
+    }
+   ]
+  },
+  {
+   "id": "py_semver_range",
+   "lang": "python",
+   "attempts": [
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 56.3,
+     "completion_tokens": 8192,
+     "reply": ""
+    },
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 55.7,
+     "completion_tokens": 8192,
+     "reply": ""
+    }
+   ]
+  },
+  {
+   "id": "py_shell_split",
+   "lang": "python",
+   "attempts": [
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 55.3,
+     "completion_tokens": 8192,
+     "reply": ""
+    },
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 55.4,
+     "completion_tokens": 8192,
+     "reply": ""
+    }
+   ]
+  },
+  {
+   "id": "py_typed_load",
+   "lang": "python",
+   "attempts": [
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 55.4,
+     "completion_tokens": 8192,
+     "reply": ""
+    },
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 55.6,
+     "completion_tokens": 8192,
+     "reply": ""
+    }
+   ]
+  },
+  {
+   "id": "sh_access_log",
+   "lang": "bash",
+   "attempts": [
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 55.2,
+     "completion_tokens": 8192,
+     "reply": ""
+    },
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 55.6,
+     "completion_tokens": 8192,
+     "reply": ""
+    }
+   ]
+  },
+  {
+   "id": "sh_csv_col",
+   "lang": "bash",
+   "attempts": [
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 55.4,
+     "completion_tokens": 8192,
+     "reply": ""
+    },
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 55.4,
+     "completion_tokens": 8192,
+     "reply": "```bash\n#!/usr/bin/env bash\n\nset -euo pipefail\n\nDELIM=\",\"\nDO_SUM=0\nCOLUMN=\"\"\nFILE=\"\"\n\nwhile getopts \":"
+    }
+   ]
+  },
+  {
+   "id": "sh_env_export",
+   "lang": "bash",
+   "attempts": [
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 55.3,
+     "completion_tokens": 8192,
+     "reply": ""
+    },
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 55.4,
+     "completion_tokens": 8192,
+     "reply": ""
+    }
+   ]
+  },
+  {
+   "id": "sh_retry",
+   "lang": "bash",
+   "attempts": [
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 55.3,
+     "completion_tokens": 8192,
+     "reply": ""
+    },
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 55.4,
+     "completion_tokens": 8192,
+     "reply": ""
+    }
+   ]
+  },
+  {
+   "id": "sh_rotate",
+   "lang": "bash",
+   "attempts": [
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 55.2,
+     "completion_tokens": 8192,
+     "reply": ""
+    },
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 55.2,
+     "completion_tokens": 8192,
+     "reply": ""
+    }
+   ]
+  },
+  {
+   "id": "sh_wordfreq",
+   "lang": "bash",
+   "attempts": [
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 55.2,
+     "completion_tokens": 8192,
+     "reply": ""
+    },
+    {
+     "passed": false,
+     "output": "no fenced code block in the reply",
+     "seconds": 55.5,
+     "completion_tokens": 8192,
+     "reply": ""
+    }
+   ]
+  }
+ ]
+}

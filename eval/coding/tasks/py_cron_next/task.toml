@@ -1,0 +1,18 @@
+lang = "python"
+file = "solution.py"
+prompt = """
+Implement `next_fire(expr: str, after: datetime.datetime) -> datetime.datetime` for standard 5-field cron
+expressions: `minute hour day-of-month month day-of-week`.
+
+Field rules:
+- minute 0-59, hour 0-23, day-of-month 1-31, month 1-12, day-of-week 0-7 (0 and 7 are both Sunday).
+- Each field is a comma-separated list of items. An item is `*`, a number `N`, a range `A-B`, or any of those
+  followed by `/S` (step). `*/S` steps over the whole field range; `A/S` means from A to the field maximum.
+- Month names `JAN`..`DEC` and day names `SUN`..`SAT` are accepted case-insensitively, also inside ranges.
+- Day matching follows Vixie cron: if both day-of-month and day-of-week are restricted (neither field is
+  exactly `*`), a day matches when EITHER matches. Otherwise both must match (a `*` always matches).
+- Return the earliest datetime strictly after `after` (seconds and microseconds of the result are 0) that matches.
+  `after` is naive. Never return `after` itself even if it matches exactly on a whole minute.
+- Raise `ValueError` for a wrong field count, out-of-range values, a range with A > B, a zero step, or unknown
+  names. If no time matches within the next 5 years (e.g. `0 0 30 2 *`), raise `ValueError`.
+"""

@@ -56,13 +56,13 @@ Skip:
 - Gemma 4 26B-A4B for coding (excellent for burnish, weak at agentic coding)
 
 Notes:
-- We already have Qwen3.8-27B as GSQ-RCO IQ3_S (11 GB). It's fine for a first try, but use Q5 or higher for
-  coding.
-- Burnish's thinking fix (`enable_thinking=False`) is right for copy-edits. Coding agents probably want it on.
+- Qwen3.8-27B GSQ-RCO IQ3_S (11 GB) vs UD-Q6_K (20.5 GB) on our coding eval (25 tasks, recommended sampling, 3 seeds):
+  pass@2 13.7 vs 15.0, within the seed spread; Q6_K is ahead at pass@1 (7.0 vs 10.0). IQ3_S is a reasonable choice
+  when VRAM is tight. Details: `coding-bench.md`.
+- Thinking: on the coding eval, Qwen3.6 with thinking on scored worse than with it off and often ran past 32k tokens;
+  measured comparisons use thinking off.
 
-Next step: build `llama-server` (llama.cpp `b12020` or newer) and download candidates 1 and 2. Then measure
-generation and prompt-processing speed at 32k context on GPUs 2+3, plus a small coding eval (an Aider
-polyglot subset or tasks from our own repos).
+Measured speed, quality and the remaining comparison work are in `coding-bench.md`.
 
 ## Sources
 

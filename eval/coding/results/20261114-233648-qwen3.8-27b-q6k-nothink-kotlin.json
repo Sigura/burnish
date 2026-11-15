@@ -1,0 +1,119 @@
+{
+ "args": {
+  "url": "http://127.0.0.1:8095",
+  "model": null,
+  "label": "qwen3.8-27b-q6k-nothink-kotlin",
+  "tasks": "*",
+  "exclude": null,
+  "task_dir": "/home/sigura/burnish/eval/coding/tasks",
+  "langs": "kotlin",
+  "attempts": 2,
+  "seed": 0,
+  "temperature": 0.0,
+  "top_p": null,
+  "top_k": null,
+  "min_p": null,
+  "presence_penalty": null,
+  "repeat_penalty": null,
+  "max_tokens": 32768,
+  "no_think": true,
+  "ref": false,
+  "rescore": null
+ },
+ "summary": {
+  "all": {
+   "tasks": 4,
+   "pass@1": 2,
+   "pass@2": 3,
+   "tests@1": 2.0,
+   "tests@2": 3.875,
+   "capped": 0,
+   "seconds": 136.4,
+   "completion_tokens": 4819
+  },
+  "kotlin": {
+   "tasks": 4,
+   "pass@1": 2,
+   "pass@2": 3,
+   "tests@1": 2.0,
+   "tests@2": 3.875,
+   "capped": 0,
+   "seconds": 136.4,
+   "completion_tokens": 4819
+  }
+ },
+ "results": [
+  {
+   "id": "kt_fix_money",
+   "lang": "kotlin",
+   "attempts": [
+    {
+     "passed": true,
+     "capped": false,
+     "output": "7/7 passed",
+     "seconds": 19.7,
+     "completion_tokens": 685,
+     "reply": "```kotlin\nimport java.math.BigDecimal\nimport java.math.RoundingMode\n\nclass Ledger {\n    private val balances = HashMap<String, BigDecimal>()\n    private val log = HashMap<String, MutableList<BigDecimal>>()\n\n    fun openAccount(id: String, initial: BigDecimal = BigDecimal.ZERO) {\n        if (balances.containsKey(id)) {\n            throw IllegalArgumentException(\"Account with id '$id' already exists\")\n        }\n        if (initial.signum() < 0) {\n            throw IllegalArgumentException(\"Initial balance must be non-negative\")\n        }\n        val normalized = normalize(initial)\n        balances[id] = normalized\n        log[id] = mutableListOf()\n    }\n\n    fun balance(id: String): BigDecimal {\n        val b = balances[id] ?: throw NoSuchElementException(\"No account with id '$id'\")\n        return b\n    }\n\n    fun transfer(from: String, to: String, amount: BigDecimal) {\n        if (amount.signum() <= 0) {\n            throw IllegalArgumentException(\"Transfer amount must be positive\")\n        }\n        val normalized = normalize(amount)\n        val fromBalance = balances[from] ?: throw NoSuchElementException(\"No account with id '$from'\")\n        val toBalance = balances[to] ?: throw NoSuchElementException(\"No account with id '$to'\")\n        if (fromBalance < normalized) {\n            throw IllegalStateException(\"Insufficient funds\")\n        }\n        balances[from] = fromBalance.subtract(normalized)\n        log.getValue(from).add(normalized.negate())\n        balances[to] = toBalance.add(normalized)\n        log.getValue(to).add(normalized)\n    }\n\n    fun history(id: String): List<BigDecimal> {\n        val entries = log[id] ?: throw NoSuchElementException(\"No account with id '$id'\")\n        return entries.toList()\n    }\n\n    companion object {\n        fun split(total: BigDecimal, n: Int): List<BigDecimal> {\n            if (n <= 0) {\n                throw IllegalArgumentException(\"n must be positive\")\n            }\n            val normalized = normalize(total)\n            if (normalized.signum() < 0) {\n                throw IllegalArgumentException(\"Total must be non-negative\")\n            }\n            // Convert to cents for exact integer arithmetic\n            val totalCents = normalized.movePointRight(2).toLong()\n            val baseCents = totalCents / n\n            val remainder = (totalCents % n).toInt()\n            val base = BigDecimal.valueOf(baseCents).movePointLeft(2)\n            val larger = base.add(BigDecimal(\"0.01\"))\n            val result = ArrayList<BigDecimal>(n)\n            // Larger parts first\n            for (i in 0 until n) {\n                if (i < remainder) {\n                    result.add(larger)\n                } else {\n                    result.add(base)\n                }\n            }\n            return result\n        }\n\n        private fun normalize(amount: BigDecimal): BigDecimal {\n            if (amount.scale() > 2) {\n                throw IllegalArgumentException(\"Amount must have at most 2 decimal places\")\n            }\n            return amount.setScale(2, RoundingMode.UNNECESSARY)\n        }\n    }\n}\n```"
+    }
+   ]
+  },
+  {
+   "id": "kt_lru",
+   "lang": "kotlin",
+   "attempts": [
+    {
+     "passed": false,
+     "capped": false,
+     "output": "solution.kt:24:35: error: argument type mismatch: actual type is 'V? (of class LruCache<K, V>)', but 'V (of class LruCache<K, V>)' was expected.\n                onEvict(firstKey, firstValue)\n                                  ^^^^^^^^^^\n0/1 passed (compile error)",
+     "seconds": 8.8,
+     "completion_tokens": 283,
+     "reply": "```kotlin\nclass LruCache<K, V>(val capacity: Int, private val onEvict: (K, V) -> Unit = { _, _ -> }) {\n    init {\n        require(capacity >= 1) { \"capacity must be >= 1\" }\n    }\n\n    private val map = LinkedHashMap<K, V>(capacity, 1.0f, true)\n\n    val size: Int\n        get() = map.size\n\n    operator fun get(key: K): V? {\n        return map[key]\n    }\n\n    operator fun set(key: K, value: V) {\n        if (map.containsKey(key)) {\n            map[key] = value\n        } else {\n            map[key] = value\n            if (map.size > capacity) {\n                val firstKey = map.keys.first()\n                val firstValue = map[firstKey]\n                map.remove(firstKey)\n                onEvict(firstKey, firstValue)\n            }\n        }\n    }\n\n    fun remove(key: K): V? {\n        return map.remove(key)\n    }\n\n    fun keys(): List<K> {\n        return map.keys.toList()\n    }\n\n    operator fun contains(key: K): Boolean {\n        return map.containsKey(key)\n    }\n}\n```"
+    },
+    {
+     "passed": true,
+     "capped": false,
+     "output": "8/8 passed",
+     "seconds": 8.7,
+     "completion_tokens": 295,
+     "reply": "```kotlin\nclass LruCache<K, V>(val capacity: Int, private val onEvict: (K, V) -> Unit = { _, _ -> }) {\n    init {\n        require(capacity >= 1) { \"capacity must be >= 1\" }\n    }\n\n    private val map = LinkedHashMap<K, V>(capacity, 1.0f, true)\n\n    val size: Int\n        get() = map.size\n\n    operator fun get(key: K): V? {\n        return map[key]\n    }\n\n    operator fun set(key: K, value: V) {\n        if (map.containsKey(key)) {\n            map[key] = value\n        } else {\n            map[key] = value\n            if (map.size > capacity) {\n                val firstKey = map.keys.first()\n                val firstValue = map[firstKey]\n                map.remove(firstKey)\n                @Suppress(\"UNCHECKED_CAST\")\n                onEvict(firstKey, firstValue as V)\n            }\n        }\n    }\n\n    fun remove(key: K): V? {\n        return map.remove(key)\n    }\n\n    fun keys(): List<K> {\n        return map.keys.toList()\n    }\n\n    operator fun contains(key: K): Boolean {\n        return map.containsKey(key)\n    }\n}\n```"
+    }
+   ]
+  },
+  {
+   "id": "kt_render",
+   "lang": "kotlin",
+   "attempts": [
+    {
+     "passed": false,
+     "capped": false,
+     "output": "solution.kt:42:13: error: unsupported escape sequence.\n            '\\f' -> sb.append(\"\\\\f\")\n            ^^^^\nsolution.kt:47:25: error: argument type mismatch: actual type is 'Int', but 'Char' was expected.\n                if (c < 0x20) {\n                        ^^^^\nsolution.kt:49:33: error: none of the following candidates is applicable:\n\nfun toString(): String:\n  Too many arguments for 'fun toString(): String'.\n\nfun Any?.toString(): String:\n  Too many arguments for 'fun Any?.toString(): String'.\n                    val hex = c.toString(16)\n                                ^^^^^^^^\nsolution.kt:50:32: error: unresolved reference 'length'.\n                    while (hex.length < 4) {\n                               ^^^^^^\n0/1 passed (compile error)",
+     "seconds": 31.5,
+     "completion_tokens": 1118,
+     "reply": "```kotlin\nfun toJson(value: Any?, indent: Int = 0): String {\n    val sb = StringBuilder()\n    writeValue(sb, value, indent, 0)\n    return sb.toString()\n}\n\nprivate fun writeValue(sb: StringBuilder, value: Any?, indent: Int, level: Int) {\n    when (value) {\n        null -> sb.append(\"null\")\n        is Boolean -> sb.append(value.toString())\n        is String -> writeString(sb, value)\n        is Int -> sb.append(value.toString())\n        is Long -> sb.append(value.toString())\n        is Double -> {\n            if (value.isNaN() || value.isInfinite()) {\n                throw IllegalArgumentException(\"Non-finite double value: $value\")\n            }\n            sb.append(value.toString())\n        }\n        is Float -> {\n            val d = value.toDouble()\n            if (d.isNaN() || d.isInfinite()) {\n                throw IllegalArgumentException(\"Non-finite float value: $value\")\n            }\n            sb.append(d.toString())\n        }\n        is Enum<*> -> writeString(sb, value.name)\n        is Map<*, *> -> writeMap(sb, value, indent, level)\n        is List<*> -> writeList(sb, value, indent, level)\n        is Array<*> -> writeArray(sb, value, indent, level)\n        else -> throw IllegalArgumentException(\"Unsupported type: ${value::class.simpleName}\")\n    }\n}\n\nprivate fun writeString(sb: StringBuilder, s: String) {\n    sb.append('\"')\n    for (c in s) {\n        when (c) {\n            '\"' -> sb.append(\"\\\\\\\"\")\n            '\\\\' -> sb.append(\"\\\\\\\\\")\n            '\\b' -> sb.append(\"\\\\b\")\n            '\\f' -> sb.append(\"\\\\f\")\n            '\\n' -> sb.append(\"\\\\n\")\n            '\\r' -> sb.append(\"\\\\r\")\n            '\\t' -> sb.append(\"\\\\t\")\n            else -> {\n                if (c < 0x20) {\n                    sb.append(\"\\\\u\")\n                    val hex = c.toString(16)\n                    while (hex.length < 4) {\n                        sb.append('0')\n                    }\n                    sb.append(hex)\n                } else {\n                    sb.append(c)\n                }\n            }\n        }\n    }\n    sb.append('\"')\n}\n\nprivate fun writeMap(sb: StringBuilder, map: Map<*, *>, indent: Int, level: Int) {\n    if (map.isEmpty()) {\n        sb.append(\"{}\")\n        return\n    }\n    sb.append('{')\n    val entries = map.entries.toList()\n    for ((i, entry) in entries.withIndex()) {\n        if (i > 0) sb.append(',')\n        if (indent > 0) {\n            sb.append('\\n')\n            sb.append(\" \".repeat((level + 1) * indent))\n        }\n        val key = entry.key\n        if (key !is String) {\n            throw IllegalArgumentException(\"Non-String map key: $key\")\n        }\n        writeString(sb, key)\n        if (indent > 0) {\n            sb.append(\": \")\n        } else {\n            sb.append(':')\n        }\n        writeValue(sb, entry.value, indent, level + 1)\n    }\n    if (indent > 0) {\n        sb.append('\\n')\n        sb.append(\" \".repeat(level * indent))\n    }\n    sb.append('}')\n}\n\nprivate fun writeList(sb: StringBuilder, list: List<*>, indent: Int, level: Int) {\n    if (list.isEmpty()) {\n        sb.append(\"[]\")\n        return\n    }\n    sb.append('[')\n    for ((i, item) in list.withIndex()) {\n        if (i > 0) sb.append(',')\n        if (indent > 0) {\n            sb.append('\\n')\n            sb.append(\" \".repeat((level + 1) * indent))\n        }\n        writeValue(sb, item, indent, level + 1)\n    }\n    if (indent > 0) {\n        sb.append('\\n')\n        sb.append(\" \".repeat(level * indent))\n    }\n    sb.append(']')\n}\n\nprivate fun writeArray(sb: StringBuilder, array: Array<*>, indent: Int, level: Int) {\n    if (array.isEmpty()) {\n        sb.append(\"[]\")\n        return\n    }\n    sb.append('[')\n    for ((i, item) in array.withIndex()) {\n        if (i > 0) sb.append(',')\n        if (indent > 0) {\n            sb.append('\\n')\n            sb.append(\" \".repeat((level + 1) * indent))\n        }\n        writeValue(sb, item, indent, level + 1)\n    }\n    if (indent > 0) {\n        sb.append('\\n')\n        sb.append(\" \".repeat(level * indent))\n    }\n    sb.append(']')\n}\n```"
+    },
+    {
+     "passed": false,
+     "capped": false,
+     "output": "FAIL escapes: java.lang.OutOfMemoryError: Requested array size exceeds VM limit\n7/8 passed",
+     "seconds": 31.5,
+     "completion_tokens": 1123,
+     "reply": "```kotlin\nfun toJson(value: Any?, indent: Int = 0): String {\n    val sb = StringBuilder()\n    writeValue(sb, value, indent, 0)\n    return sb.toString()\n}\n\nprivate fun writeValue(sb: StringBuilder, value: Any?, indent: Int, level: Int) {\n    when (value) {\n        null -> sb.append(\"null\")\n        is Boolean -> sb.append(value.toString())\n        is String -> writeString(sb, value)\n        is Int -> sb.append(value.toString())\n        is Long -> sb.append(value.toString())\n        is Double -> {\n            if (value.isNaN() || value.isInfinite()) {\n                throw IllegalArgumentException(\"Non-finite double value: $value\")\n            }\n            sb.append(value.toString())\n        }\n        is Float -> {\n            val d = value.toDouble()\n            if (d.isNaN() || d.isInfinite()) {\n                throw IllegalArgumentException(\"Non-finite float value: $value\")\n            }\n            sb.append(d.toString())\n        }\n        is Enum<*> -> writeString(sb, value.name)\n        is Map<*, *> -> writeMap(sb, value, indent, level)\n        is List<*> -> writeList(sb, value, indent, level)\n        is Array<*> -> writeArray(sb, value, indent, level)\n        else -> throw IllegalArgumentException(\"Unsupported type: ${value::class.simpleName}\")\n    }\n}\n\nprivate fun writeString(sb: StringBuilder, s: String) {\n    sb.append('\"')\n    for (c in s) {\n        when (c) {\n            '\"' -> sb.append(\"\\\\\\\"\")\n            '\\\\' -> sb.append(\"\\\\\\\\\")\n            '\\b' -> sb.append(\"\\\\b\")\n            0x0C.toChar() -> sb.append(\"\\\\f\")\n            '\\n' -> sb.append(\"\\\\n\")\n            '\\r' -> sb.append(\"\\\\r\")\n            '\\t' -> sb.append(\"\\\\t\")\n            else -> {\n                if (c.code < 0x20) {\n                    sb.append(\"\\\\u\")\n                    val hex = Integer.toHexString(c.code)\n                    while (hex.length < 4) {\n                        sb.append('0')\n                    }\n                    sb.append(hex)\n                } else {\n                    sb.append(c)\n                }\n            }\n        }\n    }\n    sb.append('\"')\n}\n\nprivate fun writeMap(sb: StringBuilder, map: Map<*, *>, indent: Int, level: Int) {\n    if (map.isEmpty()) {\n        sb.append(\"{}\")\n        return\n    }\n    sb.append('{')\n    val entries = map.entries.toList()\n    for ((i, entry) in entries.withIndex()) {\n        if (i > 0) sb.append(',')\n        if (indent > 0) {\n            sb.append('\\n')\n            sb.append(\" \".repeat((level + 1) * indent))\n        }\n        val key = entry.key\n        if (key !is String) {\n            throw IllegalArgumentException(\"Non-String map key: $key\")\n        }\n        writeString(sb, key)\n        if (indent > 0) {\n            sb.append(\": \")\n        } else {\n            sb.append(':')\n        }\n        writeValue(sb, entry.value, indent, level + 1)\n    }\n    if (indent > 0) {\n        sb.append('\\n')\n        sb.append(\" \".repeat(level * indent))\n    }\n    sb.append('}')\n}\n\nprivate fun writeList(sb: StringBuilder, list: List<*>, indent: Int, level: Int) {\n    if (list.isEmpty()) {\n        sb.append(\"[]\")\n        return\n    }\n    sb.append('[')\n    for ((i, item) in list.withIndex()) {\n        if (i > 0) sb.append(',')\n        if (indent > 0) {\n            sb.append('\\n')\n            sb.append(\" \".repeat((level + 1) * indent))\n        }\n        writeValue(sb, item, indent, level + 1)\n    }\n    if (indent > 0) {\n        sb.append('\\n')\n        sb.append(\" \".repeat(level * indent))\n    }\n    sb.append(']')\n}\n\nprivate fun writeArray(sb: StringBuilder, array: Array<*>, indent: Int, level: Int) {\n    if (array.isEmpty()) {\n        sb.append(\"[]\")\n        return\n    }\n    sb.append('[')\n    for ((i, item) in array.withIndex()) {\n        if (i > 0) sb.append(',')\n        if (indent > 0) {\n            sb.append('\\n')\n            sb.append(\" \".repeat((level + 1) * indent))\n        }\n        writeValue(sb, item, indent, level + 1)\n    }\n    if (indent > 0) {\n        sb.append('\\n')\n        sb.append(\" \".repeat(level * indent))\n    }\n    sb.append(']')\n}\n```"
+    }
+   ]
+  },
+  {
+   "id": "kt_tokens",
+   "lang": "kotlin",
+   "attempts": [
+    {
+     "passed": true,
+     "capped": false,
+     "output": "8/8 passed",
+     "seconds": 36.2,
+     "completion_tokens": 1315,
+     "reply": "```kotlin\nsealed class Token {\n    abstract val pos: Int  // 0-based index of the token's first character\n    data class Ident(val name: String, override val pos: Int) : Token()\n    data class Str(val value: String, override val pos: Int) : Token()\n    data class Num(val value: Double, override val pos: Int) : Token()\n    data class Op(val symbol: String, override val pos: Int) : Token()\n    data class Paren(val open: Boolean, override val pos: Int) : Token()\n}\nclass TokenizeException(message: String, val pos: Int) : Exception(message)\nfun tokenize(input: String): List<Token> {\n    val tokens = mutableListOf<Token>()\n    var i = 0\n    val n = input.length\n\n    while (i < n) {\n        val c = input[i]\n\n        // Skip whitespace\n        if (c == ' ' || c == '\\t' || c == '\\n') {\n            i++\n            continue\n        }\n\n        // Parentheses\n        if (c == '(') {\n            tokens.add(Token.Paren(true, i))\n            i++\n            continue\n        }\n        if (c == ')') {\n            tokens.add(Token.Paren(false, i))\n            i++\n            continue\n        }\n\n        // Strings\n        if (c == '\"' || c == '\\'') {\n            val quote = c\n            val startPos = i\n            i++\n            val sb = StringBuilder()\n            var terminated = false\n            while (i < n) {\n                val ch = input[i]\n                if (ch == '\\\\') {\n                    if (i + 1 >= n) {\n                        throw TokenizeException(\"Unterminated string\", startPos)\n                    }\n                    val next = input[i + 1]\n                    when (next) {\n                        'n' -> sb.append('\\n')\n                        't' -> sb.append('\\t')\n                        'r' -> sb.append('\\r')\n                        '\\\\' -> sb.append('\\\\')\n                        '\\'' -> sb.append('\\'')\n                        '\"' -> sb.append('\"')\n                        else -> sb.append(next)\n                    }\n                    i += 2\n                } else if (ch == quote) {\n                    terminated = true\n                    i++\n                    break\n                } else {\n                    sb.append(ch)\n                    i++\n                }\n            }\n            if (!terminated) {\n                throw TokenizeException(\"Unterminated string\", startPos)\n            }\n            tokens.add(Token.Str(sb.toString(), startPos))\n            continue\n        }\n\n        // Identifiers\n        if (c.isLetter() || c == '_') {\n            val startPos = i\n            i++\n            while (i < n) {\n                val ch = input[i]\n                if (ch.isLetterOrDigit() || ch == '_' || ch == '.') {\n                    i++\n                } else {\n                    break\n                }\n            }\n            val name = input.substring(startPos, i)\n            tokens.add(Token.Ident(name, startPos))\n            continue\n        }\n\n        // Numbers\n        if (c.isDigit()) {\n            val startPos = i\n            i++\n            while (i < n && input[i].isDigit()) {\n                i++\n            }\n            if (i < n && input[i] == '.') {\n                i++\n                if (i >= n || !input[i].isDigit()) {\n                    throw TokenizeException(\"Malformed number\", startPos)\n                }\n                while (i < n && input[i].isDigit()) {\n                    i++\n                }\n            }\n            val numStr = input.substring(startPos, i)\n            val value = numStr.toDouble()\n            tokens.add(Token.Num(value, startPos))\n            continue\n        }\n\n        // Negative numbers: '-' followed by digit, only allowed when previous token is absent, Op, or opening Paren\n        if (c == '-') {\n            if (i + 1 < n && input[i + 1].isDigit()) {\n                val lastToken = tokens.lastOrNull()\n                val canBeNegative = lastToken == null ||\n                        lastToken is Token.Op ||\n                        (lastToken is Token.Paren && lastToken.open)\n                if (!canBeNegative) {\n                    throw TokenizeException(\"Unexpected '-'\", i)\n                }\n                val startPos = i\n                i++ // skip '-'\n                while (i < n && input[i].isDigit()) {\n                    i++\n                }\n                if (i < n && input[i] == '.') {\n                    i++\n                    if (i >= n || !input[i].isDigit()) {\n                        throw TokenizeException(\"Malformed number\", startPos)\n                    }\n                    while (i < n && input[i].isDigit()) {\n                        i++\n                    }\n                }\n                val numStr = input.substring(startPos, i)\n                val value = numStr.toDouble()\n                tokens.add(Token.Num(value, startPos))\n                continue\n            } else {\n                throw TokenizeException(\"Unexpected character '-'\", i)\n            }\n        }\n\n        // Operators (longest match first)\n        if (i + 1 < n) {\n            val twoChar = input.substring(i, i + 2)\n            if (twoChar == \"==\" || twoChar == \"!=\" || twoChar == \"<=\" || twoChar == \">=\" || twoChar == \"&&\" || twoChar == \"||\") {\n                tokens.add(Token.Op(twoChar, i))\n                i += 2\n                continue\n            }\n        }\n\n        // Single character operators\n        if (c == '<' || c == '>' || c == '!') {\n            tokens.add(Token.Op(c.toString(), i))\n            i++\n            continue\n        }\n\n        // Anything else is an error\n        throw TokenizeException(\"Unexpected character '$c'\", i)\n    }\n\n    return tokens\n}\n```"
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,18 @@
+lang = "bash"
+file = "solution.sh"
+prompt = """
+Write `solution.sh [-n] [-k KEEP] DIR PREFIX`, a backup pruner.
+
+Backups in DIR (not recursive) are regular files named `PREFIX-YYYYmmdd-HHMMSS.tar.gz` (exactly that pattern;
+other files, directories and symlinks are never touched). Their age is taken from the timestamp in the NAME, not
+the mtime. Keep:
+- the KEEP newest backups (default 7), and
+- additionally, the newest backup of each of the last 4 calendar months that have backups (by name timestamp),
+  even if older than the KEEP newest.
+Delete every other matching backup. Print one line per deleted file, `delete NAME` (basename), oldest first.
+`-n` is a dry run: print the same lines but delete nothing. PREFIX may contain regex/glob special characters
+(e.g. `db.main+1`) and must match literally. File names may contain no spaces but DIR may.
+Errors (missing DIR, missing args, KEEP not a non-negative integer): message to stderr, exit 2.
+
+Environment: GNU bash 5.2, GNU coreutils, GNU sed/grep/find, and `awk` is mawk (POSIX awk: do not rely on gawk-only features such as `asort`, `PROCINFO`, `gensub`, `strftime`). No Python, Perl or jq.
+"""

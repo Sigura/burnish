@@ -1,0 +1,17 @@
+lang = "python"
+file = "solution.py"
+prompt = """
+Implement `summarize(lines: Iterable[str]) -> dict` for application log lines of the form
+`2026-11-14T10:02:03Z LEVEL [component] message` (single spaces between the first three fields; message may
+contain anything). LEVEL is one of `DEBUG INFO WARN ERROR`.
+
+Return:
+- `"counts"`: dict LEVEL -> count, including all four levels (zero if absent).
+- `"errors_by_component"`: dict component -> number of ERROR lines, only components with at least one error.
+- `"busiest_hour"`: the hour as `"2026-11-14T10"` with the most lines (any level); ties -> the earliest hour;
+  `None` when there are no valid lines.
+- `"first_error"`: the message of the earliest ERROR line by timestamp (input may be out of order); ties -> first
+  in input order; `None` if no errors.
+- `"invalid"`: number of lines that don't match the format (wrong timestamp, unknown level, missing brackets).
+  Blank lines are ignored entirely (not invalid).
+"""

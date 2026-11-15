@@ -1,0 +1,25 @@
+lang = "bash"
+file = "solution.sh"
+prompt = """
+Write `solution.sh LOGFILE...` that summarizes web server access logs in combined log format, e.g.
+
+`203.0.113.9 - - [14/Nov/2026:10:02:03 +0300] "GET /api/v1/items?id=3 HTTP/1.1" 200 5120 "-" "curl/8.5"`
+
+Files ending in `.gz` are read with `zcat`; `-` means stdin. Lines that don't match the format (wrong quoting,
+non-numeric status) are counted as malformed and otherwise skipped. A size of `-` counts as 0 bytes.
+
+Output exactly these sections:
+```
+requests: <number of valid lines>
+malformed: <number of malformed lines>
+status:
+  <code> <count>          (one line per status code, ascending code)
+top_ips:
+  <ip> <total bytes>      (top 3 by total bytes, ties by ip ascending in byte order)
+top_paths:
+  <path> <count>          (top 3 request paths WITHOUT the query string, by count desc, ties path ascending)
+```
+A section with no entries still prints its header. Missing input files: message to stderr, exit 1, no output.
+
+Environment: GNU bash 5.2, GNU coreutils, GNU sed/grep/find, and `awk` is mawk (POSIX awk: do not rely on gawk-only features such as `asort`, `PROCINFO`, `gensub`, `strftime`). No Python, Perl or jq.
+"""
