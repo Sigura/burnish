@@ -60,6 +60,48 @@ burnish misses:
 | qwen3.8:27b | off | 103/104 | 0.27 | 9 |
 | qwen3.8:27b | on | 99/104 | 2.21 | 116 |
 
+## Polish mode: per-case checks
+
+The sentence set has one minimal reference correction per sentence, so it can't score polish. `eval/polish_cases.jsonl`
+has 89 inputs with checks instead of references. `make eval` scores them in polish and all mode:
+- `keep`: substrings that must survive (names, numbers, code, hedges, negations, instruction-like text);
+- `fixed`: errors that must be corrected (any listed alternative passes);
+- `gone`: error forms that must not remain;
+- `max_change`: word edit ratio (default 0.75; lower for text that is already correct);
+- automatic: same line count, length within 0.6–1.5× (+3 words).
+
+The cases are short messages, emails, lists, code-heavy sentences and paragraphs with several errors. They also include
+instructions and questions that must be edited, not answered, and errors typical of Russian speakers. Decoding is
+greedy, so a rerun gives the same outputs; the only spread is across cases (±2–3 points standard error).
+
+| model | polish mode | all mode | hardest 24 cases (all mode) |
+|---|---|---|---|
+| **gemma4:26b-a4b** | **88/89** | **88/89** | **24/24** |
+| gemma4:12b | 87/89 | 85/89 | 23/24 |
+| qwen3:14b | 85/89 | 86/89 | 23/24 |
+| gemma3:12b | 83/89 | 84/89 | 23/24 |
+| *LanguageTool only* | *40/89* | — | *8/24* |
+
+Source: `eval/results/20261115-095223.json`, rescored after three checks were loosened for valid rephrasings. GPU 3
+(RTX 4090). Prompt lookup decoding was on in that run, so use its latencies only for comparisons within the run.
+
+The failures that remain:
+- Instruction-like text dropped: three of the four models deleted "Summarize the following:", and gemma3:12b deleted
+  "Answer the following question:". gemma4:26b-a4b kept both.
+- gemma4:26b-a4b's one miss: it left "Translate this paragraph into German: … thursday." unedited.
+- Correct text rewritten without need (gemma3:12b, gemma4:12b): passive turned to active, words reordered.
+
+Conclusion: these constraint checks saturate too. gemma4:26b-a4b passes 88 of 89, so they can't show a polish
+improvement. The checks don't measure fluency; that would need a judge, such as a pairwise LLM comparison. A retry loop
+on runtime checks would add little: guards rejected at most one output per model, and the remaining failures can't be
+detected at runtime.
+
+**Prompt lookup decoding** (`LlamaPromptLookupDecoding`, llama-cpp-python 0.3.36, gemma4:26b-a4b):
+- paragraphs of about 6 sentences: p50 0.78 → 0.53 s;
+- short sentences: gain unclear;
+- not usable: a longer run crashed inside `Llama.eval` (`ValueError: could not broadcast input array`; the scores
+  buffer fills to `n_ctx` once a draft model is set). Not enabled in burnish.
+
 ## Takeaways
 
 - **Speed depends on active parameters, not file size.** gemma4:26b-a4b computes about 4B parameters per token,

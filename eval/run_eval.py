@@ -1,6 +1,8 @@
 import argparse
 import csv
 import json
+import math
+import re
 import statistics
 import time
 from dataclasses import replace
@@ -18,6 +20,7 @@ from burnish.selector import ModelSelector, query_free_vram_mb, query_process_vr
 ROOT = Path(__file__).parent
 GPU_TARGET_SECONDS = 3.0
 CPU_TARGET_SECONDS = 8.0
+POLISH_MAX_CHANGE = 0.75
 
 
 def word_distance(a: str, b: str) -> int:
@@ -50,22 +53,77 @@ def score(rows: list[tuple[str, str]], outputs: list[str]) -> dict:
     }
 
 
-def run_variant(pipeline, rows, selection, use_llm, use_lt, mode="fix") -> dict:
+def refine_all(pipeline, texts, selection, use_llm, use_lt, mode) -> tuple[list[str], list[float], int]:
     outputs, seconds, fallbacks = [], [], 0
-    for source, _ in rows:
+    for source in texts:
         started = time.perf_counter()
         result = pipeline.refine(source, mode, selection=selection, use_llm=use_llm, use_lt=use_lt)
         seconds.append(time.perf_counter() - started)
         outputs.append(result.text)
         fallbacks += any(i["type"].endswith("_guard") for i in result.issues)
+    return outputs, seconds, fallbacks
+
+
+def latency(seconds: list[float]) -> dict:
     ordered = sorted(seconds)
+    return {"p50": statistics.median(seconds), "p95": ordered[min(len(ordered) - 1, int(len(ordered) * 0.95))]}
+
+
+def run_variant(pipeline, rows, selection, use_llm, use_lt, mode="fix") -> dict:
+    outputs, seconds, fallbacks = refine_all(pipeline, [s for s, _ in rows], selection, use_llm, use_lt, mode)
+    return {**score(rows, outputs), **latency(seconds), "guard_rejections": fallbacks, "outputs": outputs}
+
+
+def contains(text: str, phrase: str) -> bool:
+    left = r"(?<!\w)" if phrase[:1].isalnum() else ""
+    right = r"(?!\w)" if phrase[-1:].isalnum() else ""
+    return re.search(left + re.escape(phrase) + right, text) is not None
+
+
+def check_case(case: dict, output: str) -> list[str]:
+    source = case["input"]
+    failures = [f"lost {s!r}" for s in case.get("keep", []) if s not in output]
+    for options in case.get("fixed", []):
+        options = [options] if isinstance(options, str) else options
+        if not any(contains(output, o) for o in options):
+            failures.append(f"missing {options[0]!r}")
+    failures += [f"kept {s!r}" for s in case.get("gone", []) if contains(output, s)]
+    words = len(source.split())
+    change = word_distance(source, output) / words
+    if change > case.get("max_change", POLISH_MAX_CHANGE):
+        failures.append(f"changed {change:.0%} of words")
+    if output.count("\n") != source.count("\n"):
+        failures.append("line count changed")
+    if not 0.6 * words <= len(output.split()) <= 1.5 * words + 3:
+        failures.append("length changed")
+    return failures
+
+
+def run_cases(pipeline, cases, selection, use_llm, use_lt, mode) -> dict:
+    outputs, seconds, fallbacks = refine_all(pipeline, [c["input"] for c in cases], selection, use_llm, use_lt, mode)
+    failures = [check_case(c, o) for c, o in zip(cases, outputs)]
+    passed = sum(not f for f in failures) / len(cases)
+    lt_left = sum(
+        m["rule"]["category"]["id"] in ("GRAMMAR", "TYPOS") for o in outputs for m in pipeline.lt.check(o)
+    )
     return {
-        **score(rows, outputs),
-        "p50": statistics.median(seconds),
-        "p95": ordered[min(len(ordered) - 1, int(len(ordered) * 0.95))],
+        "pass": passed,
+        "pass_se": math.sqrt(passed * (1 - passed) / len(cases)),
+        "lt_left": lt_left / len(cases),
+        "change": statistics.mean(word_distance(c["input"], o) / len(c["input"].split()) for c, o in zip(cases, outputs)),
+        **latency(seconds),
         "guard_rejections": fallbacks,
         "outputs": outputs,
+        "failures": failures,
     }
+
+
+def print_cases_row(name: str, m: dict) -> None:
+    print(
+        f"|   {name}: pass {m['pass']:.0%} ± {m['pass_se']:.0%}, LT flags left {m['lt_left']:.2f}/case, "
+        f"words changed {m['change']:.0%}, guard rejections {m['guard_rejections']}, "
+        f"p50 {m['p50']:.2f}s, p95 {m['p95']:.2f}s"
+    )
 
 
 def print_row(name: str, m: dict, target: float | None) -> None:
@@ -76,7 +134,7 @@ def print_row(name: str, m: dict, target: float | None) -> None:
     )
 
 
-def evaluate_candidate(pipeline, llm, rows, tier, model, on_gpu, results) -> dict:
+def evaluate_candidate(pipeline, llm, rows, cases, tier, model, on_gpu, results) -> dict:
     selection = replace(selection_from_tier(tier, on_gpu), model=model, keep_alive_seconds=600)
     llm.unload()
     started = time.perf_counter()
@@ -97,8 +155,14 @@ def evaluate_candidate(pipeline, llm, rows, tier, model, on_gpu, results) -> dic
     met = "yes" if all_mode["p95"] <= target else "NO"
     print(f"|   mode all: p50 {all_mode['p50']:.2f}s, p95 {all_mode['p95']:.2f}s, target met: {met}")
     print(f"|   cold start {cold:.1f}s, {vram_mb} MiB of VRAM in use")
+    polish_cases = {mode: run_cases(pipeline, cases, selection, True, True, mode) for mode in ("polish", "all")}
+    for mode, m in polish_cases.items():
+        print_cases_row(f"polish cases, mode {mode}", m)
     llm.unload()
-    results[f"{model}/{device}"] = {"cold_seconds": cold, "vram_mb": vram_mb, "hybrid": hybrid, "llm_only": llm_only, "all_mode": all_mode}
+    results[f"{model}/{device}"] = {
+        "cold_seconds": cold, "vram_mb": vram_mb, "hybrid": hybrid, "llm_only": llm_only, "all_mode": all_mode,
+        "polish_cases": polish_cases,
+    }
     return hybrid
 
 
@@ -116,11 +180,14 @@ def main() -> None:
     parser.add_argument("--limit", type=int, help="use only the first N sentences")
     parser.add_argument("--no-gpu", action="store_true", help="skip the GPU tiers")
     parser.add_argument("--no-cpu", action="store_true", help="skip the CPU tier")
+    parser.add_argument("--model", action="append", help="evaluate only this model, in the first GPU tier with room (repeatable)")
     args = parser.parse_args()
 
     with open(ROOT / "sentences.tsv", newline="", encoding="utf-8") as f:
         rows = [(r["input"], r["expected"]) for r in csv.DictReader(f, delimiter="\t", quoting=csv.QUOTE_NONE)]
     rows = rows[: args.limit]
+    with open(ROOT / "polish_cases.jsonl", encoding="utf-8") as f:
+        cases = [json.loads(line) for line in f if line.strip()][: args.limit]
 
     cfg = load_config()
     llm = LlamaEngine(cfg.engine, ModelStore(cfg))
@@ -139,22 +206,27 @@ def main() -> None:
     lt_only = run_variant(pipeline, rows, None, False, True)
     print_row("languagetool only", lt_only, None)
     results["languagetool"] = lt_only
+    lt_cases = run_cases(pipeline, cases, None, False, True, "fix")
+    print_cases_row(f"languagetool only, {len(cases)} polish cases", lt_cases)
+    results["languagetool_polish_cases"] = lt_cases
 
     picks: list[tuple[str, dict, float]] = []
 
     def run_tier(label, tier, on_gpu, target):
         measured = {}
-        for model in tier.candidates:
+        for model in args.model or tier.candidates:
             if model not in installed:
                 print(f"|   skipped {model}: not downloaded (burnish-models pull {model})")
                 continue
-            measured[model] = evaluate_candidate(pipeline, llm, rows, tier, model, on_gpu, results)
+            measured[model] = evaluate_candidate(pipeline, llm, rows, cases, tier, model, on_gpu, results)
         picks.append((label, measured, target))
 
     if not args.no_gpu and not llm.supports_gpu():
         print("|   skipped GPU tiers: llama.cpp was built without GPU support")
     elif not args.no_gpu:
         for tier in cfg.selection.gpu_tiers:
+            if args.model and picks:
+                break
             free = query_free_vram_mb()
             available = None if free is None else free + query_process_vram_mb()
             if available is None or available < tier.min_free_vram_mb:
@@ -171,7 +243,7 @@ def main() -> None:
     out_dir = ROOT / "results"
     out_dir.mkdir(exist_ok=True)
     out_path = out_dir / f"{datetime.now():%Y%m%d-%H%M%S}.json"
-    out_path.write_text(json.dumps({"inputs": rows, "results": results}, indent=1, ensure_ascii=False), encoding="utf-8")
+    out_path.write_text(json.dumps({"inputs": rows, "polish_cases": cases, "results": results}, indent=1, ensure_ascii=False), encoding="utf-8")
     print(f"\nFull outputs: {out_path}")
 
 
