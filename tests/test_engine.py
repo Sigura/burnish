@@ -63,14 +63,19 @@ def setup(cfg, tmp_path):
         Setup.timers.append(created)
         return created
 
-    Setup.engine = LlamaEngine(custom.engine, ModelStore(custom), factory, timer)
-    Setup.llamas, Setup.loads, Setup.timers = [], [], []
+    def gpu_free(gpu):
+        Setup.free_queries.append(gpu)
+        return Setup.free.pop(0) if Setup.free else None
+
+    Setup.engine = LlamaEngine(custom.engine, ModelStore(custom), factory, timer, gpu_free)
+    Setup.llamas, Setup.loads, Setup.timers, Setup.free, Setup.free_queries = [], [], [], [], []
     return Setup
 
 
 GEMMA = Selection("gemma3:4b", 60, True, options={"n_gpu_layers": -1})
 GEMMA_CPU = Selection("gemma3:4b", 600, False, options={"n_gpu_layers": 0})
 QWEN = Selection("qwen3:14b", 60, True, options={"n_gpu_layers": -1})
+GEMMA_GPU1 = Selection("gemma3:4b", 60, True, options={"n_gpu_layers": -1, "main_gpu": 1, "split_mode": 0}, gpu=1)
 
 
 def test_chat_is_deterministic_and_passes_model_options(setup):
@@ -184,3 +189,29 @@ def test_inference_failure_is_an_engine_error_and_still_arms_the_timer(setup):
     with pytest.raises(EngineError, match="Inference"):
         setup.engine.chat(GEMMA, "s", "u", 10)
     assert setup.timers[-1].started
+
+
+def test_own_vram_is_the_drop_in_free_memory_on_its_gpu(setup):
+    setup.free = [20000, 15000]
+    setup.engine.chat(GEMMA_GPU1, "s", "u", 10)
+    assert setup.free_queries == [1, 1]
+    assert setup.loads[0]["main_gpu"] == 1 and setup.loads[0]["split_mode"] == 0
+    assert setup.engine.vram_mb(1) == 5000
+    assert setup.engine.vram_mb(0) == 0
+    setup.engine.unload()
+    assert setup.engine.vram_mb(1) == 0
+
+
+def test_cpu_load_does_not_query_gpus(setup):
+    setup.engine.chat(GEMMA_CPU, "s", "u", 10)
+    assert setup.free_queries == []
+
+
+def test_moving_to_another_gpu_reloads(setup):
+    setup.free = [20000, 15000, 20000, 15000]
+    setup.engine.chat(GEMMA_GPU1, "s", "u", 10)
+    moved = replace(GEMMA_GPU1, gpu=2, options={**GEMMA_GPU1.options, "main_gpu": 2})
+    setup.engine.chat(moved, "s", "u", 10)
+    assert len(setup.loads) == 2
+    assert setup.llamas[0].closed is True
+    assert setup.engine.vram_mb(2) == 5000 and setup.engine.vram_mb(1) == 0

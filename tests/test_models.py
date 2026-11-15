@@ -134,3 +134,10 @@ def test_unknown_model_is_rejected(store_for):
 
 def test_every_configured_model_has_a_source(cfg):
     assert set(cfg.all_models()) <= set(cfg.models)
+
+
+def test_local_only_model_is_not_downloaded(store_for):
+    hub = Hub()
+    with pytest.raises(ModelError, match="no download source"):
+        store_for(hub).pull("gemma4:26b-a4b-imat")
+    assert hub.downloads == 0

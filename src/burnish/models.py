@@ -74,6 +74,8 @@ class ModelStore:
         if existing:
             return existing
         repo = self._source(name).repo
+        if not repo:
+            raise ModelError(f"{name} has no download source; put its file in {self._dir(name)}")
         try:
             remote_path, size, sha256 = self._resolve(name)
             directory = self._dir(name)
@@ -154,6 +156,9 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("pull needs model names or --all")
     try:
         for name in names:
+            if args.all and not cfg.models[name].repo and not store.path(name):
+                print(f"{name}: skipped, it has no download source", file=sys.stderr)
+                continue
             path = store.pull(name, _print_progress(name))
             print(f"\n{name}: {path}", file=sys.stderr)
     except ModelError as e:
