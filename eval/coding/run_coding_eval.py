@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import tempfile
 import time
@@ -45,6 +46,25 @@ def extract_code(reply: str) -> str | None:
     return blocks[-1] if blocks else None
 
 
+def run_test_cmd(cmd: list[str], work: Path) -> subprocess.CompletedProcess:
+    """subprocess.run with the tests in their own process group, killed as a whole afterwards: a timeout alone kills
+    only the test runner, and a solution it started kept running (one awk grew to 82 GB)."""
+    proc = subprocess.Popen(cmd, cwd=work, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                            start_new_session=True)
+    try:
+        out, err = proc.communicate(timeout=TEST_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        os.killpg(proc.pid, signal.SIGKILL)
+        proc.communicate()
+        raise
+    finally:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    return subprocess.CompletedProcess(cmd, proc.returncode, out, err)
+
+
 def run_tests(task: dict, code: str) -> tuple[bool, str]:
     cmd, helper, _ = RUNNERS[task["lang"]]
     with tempfile.TemporaryDirectory(prefix=f"ce-{task['id']}-") as tmp:
@@ -55,7 +75,7 @@ def run_tests(task: dict, code: str) -> tuple[bool, str]:
                 shutil.copy(f, work / f.name)
         (work / task["file"]).write_text(code)
         try:
-            proc = subprocess.run(cmd, cwd=work, capture_output=True, text=True, timeout=TEST_TIMEOUT)
+            proc = run_test_cmd(cmd, work)
         except subprocess.TimeoutExpired:
             return False, f"tests timed out after {TEST_TIMEOUT} s"
         output = (proc.stdout + proc.stderr).strip()

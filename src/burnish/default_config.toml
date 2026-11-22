@@ -2,6 +2,8 @@
 host = "127.0.0.1"
 port = 8765
 max_chars = 8000
+# /summarize takes whole transcripts; the text and the summary must fit in engine.n_ctx tokens.
+summary_max_chars = 16000
 
 [engine]
 # Empty means ~/.local/share/burnish/models.
@@ -44,8 +46,9 @@ file = "gu-q4_0_dn-q4_0.gguf"
 repo = "unsloth/Phi-4-mini-instruct-GGUF"
 file = "*Q4_K_M*.gguf"
 
-# The local model goes first. DeepSeek stands in when no GPU tier has enough free VRAM (all GPUs
-# busy, or none), before the CPU model, and when the local model fails to load or run.
+# The local model goes first: a GPU tier, else the CPU model while the host has the CPU tier's
+# min_free_ram_mb available. DeepSeek stands in only when neither fits (GPUs busy or absent and RAM
+# low), and when the local model fails to load or run.
 # Used only with a key: $DEEPSEEK_API_KEY, else key_file. Texts sent to it leave the machine.
 # deepseek-flash, not deepseek-v4-pro: a copy edit of a short text doesn't need the larger model,
 # and the hotkey waits for the answer. After a failed request the API is skipped for
@@ -102,8 +105,10 @@ keep_alive_seconds = 600
 options = { n_gpu_layers = -1, flash_attn = true, type_k = 8, type_v = 8 }
 
 # On hybrid CPUs, n_threads set to the number of performance cores may be faster than the default.
+# Below min_free_ram_mb of available RAM, DeepSeek (with a key) goes before the CPU model.
 [selection.cpu]
 model = "gemma3:4b"
+min_free_ram_mb = 8192
 candidates = ["gemma3:4b", "phi4-mini"]
 keep_alive_seconds = 600
 options = { n_gpu_layers = 0, flash_attn = true, type_k = 8, type_v = 8 }
