@@ -29,6 +29,16 @@ class RefineResponse(BaseModel):
     issues: list[dict]
 
 
+class SummarizeRequest(BaseModel):
+    text: str
+
+
+class SummarizeResponse(BaseModel):
+    text: str
+    model: str
+    truncated: bool
+
+
 def build_pipeline(cfg: Config) -> Pipeline:
     engine = LlamaEngine(cfg.engine, ModelStore(cfg))
     lt = LanguageToolClient(cfg.languagetool)
@@ -76,6 +86,22 @@ def create_app(cfg: Config, pipeline: Pipeline | None = None) -> FastAPI:
         )
         return RefineResponse(text=result.text, diff=result.diff, model=result.model, issues=result.issues)
 
+    @app.post("/summarize", response_model=SummarizeResponse)
+    def summarize(request: SummarizeRequest):
+        if len(request.text) > cfg.server.summary_max_chars:
+            raise HTTPException(413, f"Text is longer than {cfg.server.summary_max_chars} characters")
+        started = time.perf_counter()
+        try:
+            result = pipe.summarize(request.text)
+        except ServiceError as e:
+            logger.error("summarize failed: {}", e)
+            raise HTTPException(503, str(e)) from e
+        logger.info(
+            "summarize chars={} model={} truncated={} seconds={:.2f}",
+            len(request.text), result.model, result.truncated, time.perf_counter() - started,
+        )
+        return SummarizeResponse(text=result.text, model=result.model, truncated=result.truncated)
+
     @app.get("/health")
     def health():
         selection = pipe.selector.select()
@@ -85,6 +111,8 @@ def create_app(cfg: Config, pipeline: Pipeline | None = None) -> FastAPI:
             "model_downloaded": pipe.llm.is_pulled(selection.model),
             "free_vram_mb": selection.free_vram_mb,
             "gpus_busy": selection.gpus_busy,
+            "free_ram_mb": selection.free_ram_mb,
+            "ram_short": selection.ram_short,
             "deepseek": deepseek_status(cfg, pipe),
             "deepseek_model": pipe.remote.name if pipe.remote else None,
         }

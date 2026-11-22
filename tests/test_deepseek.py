@@ -56,7 +56,7 @@ def remote_harness(cfg, api, clock):
 
 @pytest.fixture
 def busy_harness(remote_harness):
-    remote_harness.selector.selection = Selection("phi4-mini", 60, False)
+    remote_harness.selector.selection = Selection("phi4-mini", 60, False, ram_short=True)
     return remote_harness
 
 
@@ -67,7 +67,15 @@ def test_local_model_goes_first_when_a_gpu_tier_fits(remote_harness, api):
     assert api.requests == []
 
 
-def test_deepseek_stands_in_when_the_gpus_are_busy(busy_harness, api):
+def test_cpu_model_goes_first_when_the_gpus_are_busy_and_ram_suffices(remote_harness, api):
+    remote_harness.selector.selection = Selection("phi4-mini", 60, False)
+    remote_harness.engine.replies = ["She goes home."]
+    result = remote_harness.pipeline.refine("She go home.", "fix")
+    assert result.model == "phi4-mini"
+    assert api.requests == []
+
+
+def test_deepseek_stands_in_when_the_gpus_are_busy_and_ram_is_short(busy_harness, api):
     api.replies = [("She goes home.", "stop")]
     result = busy_harness.pipeline.refine("She go home.", "fix")
     assert result.text == "She goes home."

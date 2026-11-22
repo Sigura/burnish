@@ -23,6 +23,8 @@ class Selection:
     options: dict = field(default_factory=dict)
     gpu: int | None = None
     gpus_busy: bool = False
+    free_ram_mb: int | None = None
+    ram_short: bool = False
 
 
 def query_free_vram_mb() -> dict[int, int] | None:
@@ -34,6 +36,17 @@ def query_free_vram_mb() -> dict[int, int] | None:
     except (OSError, subprocess.SubprocessError, ValueError) as e:
         logger.info("nvidia-smi unavailable, treating as no GPU: {}", e)
         return None
+
+
+def query_free_ram_mb() -> int | None:
+    try:
+        with open("/proc/meminfo", encoding="ascii") as f:
+            for line in f:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) // 1024
+    except (OSError, ValueError) as e:
+        logger.info("free RAM unknown, treating as enough: {}", e)
+    return None
 
 
 def query_gpu_free_mb(gpu: int) -> int | None:
@@ -79,10 +92,12 @@ class ModelSelector:
         loaded_vram_mb: Callable[[int], int],
         free_vram_mb: Callable[[], dict[int, int] | None] = query_free_vram_mb,
         clock: Callable[[], float] = time.monotonic,
+        free_ram_mb: Callable[[], int | None] = query_free_ram_mb,
     ):
         self.cfg = cfg
         self.loaded_vram_mb = loaded_vram_mb
         self.free_vram_mb = free_vram_mb
+        self.free_ram_mb = free_ram_mb
         self.clock = clock
         self.visible = cuda_visible_gpus()
         hidden = [gpu for gpu in cfg.gpus if self.visible is not None and gpu not in self.visible]
@@ -112,7 +127,7 @@ class ModelSelector:
     def _choose(self) -> Selection:
         gpus = self.available_gpus()
         if gpus is None:
-            return selection_from_tier(self.cfg.cpu, False)
+            return self._cpu(selection_from_tier(self.cfg.cpu, False))
         for tier in self.cfg.gpu_tiers:
             chosen = self.fit(tier, gpus)
             if chosen:
@@ -123,7 +138,11 @@ class ModelSelector:
                 ", ".join(f"GPU {gpu}: {available} MiB" for gpu, _, available in gpus),
             )
         best = max((available for _, _, available in gpus), default=None)
-        return selection_from_tier(self.cfg.cpu, False, best, gpus_busy=bool(gpus))
+        return self._cpu(selection_from_tier(self.cfg.cpu, False, best, gpus_busy=bool(gpus)))
+
+    def _cpu(self, selection: Selection) -> Selection:
+        ram = self.free_ram_mb()
+        return replace(selection, free_ram_mb=ram, ram_short=ram is not None and ram < self.cfg.cpu.min_free_ram_mb)
 
     def select(self, model: str | None = None) -> Selection:
         now = self.clock()

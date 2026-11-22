@@ -20,6 +20,7 @@ class ServerConfig:
     host: str
     port: int
     max_chars: int
+    summary_max_chars: int
 
     @property
     def url(self) -> str:
@@ -69,6 +70,7 @@ class Tier:
     keep_alive_seconds: float
     candidates: tuple[str, ...] = ()
     min_free_vram_mb: int = 0
+    min_free_ram_mb: int = 0
     options: dict = field(default_factory=dict)
 
 
